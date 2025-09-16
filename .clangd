@@ -1,4 +1,5 @@
 Diagnostics:
+  UnusedIncludes: None
   ClangTidy:
     Add:   [readability-braces-around-statements,
             readability-identifier-naming,
