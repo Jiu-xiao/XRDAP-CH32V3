@@ -237,6 +237,8 @@ void vPortEndScheduler( void )
 void SysTick_Handler(void) __attribute__((interrupt));
 void SysTick_Handler( void )
 {
+	extern void libxr_systick_handler(void);
+	libxr_systick_handler();
     GET_INT_SP();
     portDISABLE_INTERRUPTS();
     SysTick->SR=0;
