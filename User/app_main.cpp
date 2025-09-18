@@ -129,8 +129,8 @@ extern "C" void app_main()
 
   LibXR::RamFS ramfs;
 
-  LibXR::STDIO::read_ = cdc1.read_port_;
-  LibXR::STDIO::write_ = cdc1.write_port_;
+  LibXR::STDIO::read_ = cdc.read_port_;
+  LibXR::STDIO::write_ = cdc.write_port_;
 
   LibXR::Terminal<> terminal(ramfs);
 
