@@ -1,6 +1,7 @@
 #include <cmath>
 
-#include "cdc.hpp"
+#include "cdc_uart.hpp"
+#include "cdc_test.hpp"
 #include "ch32_gpio.hpp"
 #include "ch32_timebase.hpp"
 #include "ch32_uart.hpp"
@@ -23,7 +24,7 @@ extern "C" void app_main()
   static constexpr auto LANG_PACK_EN_US = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "CDC Demo", "123456789");
 
-  LibXR::USB::CDC cdc(4096, 4096, 8), cdc1;
+  LibXR::USB::CDCUart cdc(4096, 4096, 8), cdc1;
 
   LibXR::CH32USBDeviceFS usb_dev(
       /* EP */

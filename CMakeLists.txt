@@ -59,7 +59,7 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/Link.ld)
 add_executable(${PROJECT_NAME}.elf)
 
 target_link_options(${PROJECT_NAME}.elf PRIVATE -T ${LINKER_SCRIPT})
-target_compile_options(${PROJECT_NAME}.elf PRIVATE -Og)
+target_compile_options(${PROJECT_NAME}.elf PRIVATE -O3)
 
 # Source files
 file(GLOB CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c")
@@ -100,7 +100,7 @@ target_include_directories(Peripheral PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
 )
 
-target_compile_options(Peripheral PUBLIC -Og)
+target_compile_options(Peripheral PUBLIC -O3)
 target_link_libraries(${PROJECT_NAME}.elf PRIVATE Peripheral)
 
 # LibXR
@@ -122,7 +122,7 @@ target_include_directories(xr PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
 )
 
-target_compile_options(xr PRIVATE -Og)
+target_compile_options(xr PRIVATE -O3)
 # Output binary and hex
 set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
 set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
