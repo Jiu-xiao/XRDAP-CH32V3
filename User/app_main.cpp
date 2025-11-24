@@ -22,7 +22,8 @@ extern "C" void app_main()
 {
   // Initialize USB device
   static constexpr auto LANG_PACK_EN_US = LibXR::USB::DescriptorStrings::MakeLanguagePack(
-      LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "CDC Demo", "123456789");
+      LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "CDC Demo",
+      "XRUSB-DEMO-");
 
   LibXR::USB::CDCUart cdc(4096, 4096, 8), cdc1;
 
@@ -40,7 +41,7 @@ extern "C" void app_main()
       /* language */
       {&LANG_PACK_EN_US},
       /* config */
-      {{&cdc1}});
+      {{&cdc1}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
 
   usb_dev.Init();
 
@@ -59,7 +60,7 @@ extern "C" void app_main()
       /* language */
       {&LANG_PACK_EN_US},
       /* config */
-      {{&cdc}});
+      {{&cdc}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
 
   usb_dev_hs.Init();
 
