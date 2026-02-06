@@ -43,9 +43,9 @@ extern "C" void app_main()
       /* config */
       {{&cdc1}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
 
-  usb_dev.Init();
+  usb_dev.Init(false);
 
-  usb_dev.Start();
+  usb_dev.Start(false);
 
   LibXR::CH32USBDeviceHS usb_dev_hs(
       /* EP */
@@ -62,9 +62,9 @@ extern "C" void app_main()
       /* config */
       {{&cdc}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
 
-  usb_dev_hs.Init();
+  usb_dev_hs.Init(false);
 
-  usb_dev_hs.Start();
+  usb_dev_hs.Start(false);
 
   // Initialize timebase
 
