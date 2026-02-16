@@ -1,145 +1,108 @@
-#include <cmath>
+#include <cstdint>
 
 #include "cdc_uart.hpp"
 #include "ch32_gpio.hpp"
-#include "ch32_i2c.hpp"
 #include "ch32_timebase.hpp"
-#include "ch32_uart.hpp"
 #include "ch32_usb.hpp"
 #include "ch32_usb_dev.hpp"
-#include "ch32v30x_gpio.h"
-#include "hid_keyboard.hpp"
+#include "daplink_v2.hpp"
+#include "debug/swd_general_gpio.hpp"
 #include "libxr.hpp"
-#include "semaphore.hpp"
 #include "thread.hpp"
 
-static uint8_t ep0_buffer[64];
-static uint8_t ep1_buffer[256], ep2_buffer[256];
+namespace
+{
 static uint8_t ep0_buffer_hs[64];
-static uint8_t ep1_buffer_tx_hs[1024], ep2_buffer_rx_hs[1024], ep3_buffer_tx_hs[1024];
+static uint8_t ep1_dap_in_hs[1024];
+static uint8_t ep2_dap_out_hs[1024];
+static uint8_t ep3_cdc_in_hs[1024];
+static uint8_t ep4_cdc_out_hs[1024];
+static uint8_t ep5_cdc_comm_in_hs[256];
+}  // namespace
+
+template <>
+LibXR::ErrorCode
+LibXR::Debug::SwdGeneralGPIO<LibXR::CH32GPIO, LibXR::CH32GPIO>::SetClockHz(uint32_t hz)
+{
+  if (hz == 0u)
+  {
+    clock_hz_ = 0u;
+    half_period_ns_ = 0u;
+    half_period_loops_ = 0u;
+    return LibXR::ErrorCode::OK;
+  }
+
+  if (hz < MIN_HZ)
+  {
+    hz = MIN_HZ;
+  }
+  if (hz > MAX_HZ)
+  {
+    hz = MAX_HZ;
+  }
+
+  clock_hz_ = hz;
+
+  const uint32_t den = 2u * hz;
+  half_period_ns_ = (NS_PER_SEC + den - 1u) / den;
+
+  if (loops_per_us_ == 0u)
+  {
+    half_period_loops_ = 0u;
+    return LibXR::ErrorCode::OK;
+  }
+
+  const uint64_t loops_num =
+      static_cast<uint64_t>(loops_per_us_) * static_cast<uint64_t>(half_period_ns_);
+  if (loops_num < LOOPS_SCALE)
+  {
+    half_period_loops_ = 0u;
+    return LibXR::ErrorCode::OK;
+  }
+
+  uint64_t loops_ceil = (loops_num + CEIL_BIAS) / LOOPS_SCALE;
+  if (loops_ceil > UINT32_MAX)
+  {
+    loops_ceil = UINT32_MAX;
+  }
+  half_period_loops_ = static_cast<uint32_t>(loops_ceil);
+  return LibXR::ErrorCode::OK;
+}
 
 extern "C" void app_main()
 {
-  // Initialize timebase
   LibXR::CH32Timebase timebase;
-
+  (void)timebase;
   LibXR::PlatformInit(3, 8192);
 
-  // Initialize GPIO
-  LibXR::CH32GPIO led_b(GPIOB, GPIO_Pin_4);
-  LibXR::CH32GPIO led_r(GPIOA, GPIO_Pin_15);
-  LibXR::CH32GPIO key(GPIOB, GPIO_Pin_3, LibXR::CH32GPIO::Direction::FALL_INTERRUPT,
-                      LibXR::CH32GPIO::Pull::UP, EXTI3_IRQn);
+  // Original SWD path for WCH-LinkE style wiring: PB13(SWCLK) + PA9(SWDIO).
+  LibXR::CH32GPIO swclk(GPIOB, GPIO_Pin_13);
+  LibXR::CH32GPIO swdio(GPIOA, GPIO_Pin_9);
+  LibXR::CH32GPIO nreset(GPIOC, GPIO_Pin_8);
 
-  void (*key_cb_fun)(bool, LibXR::GPIO*) = [](bool, LibXR::GPIO* led)
-  {
-    static bool flag = false;
-    flag = !flag;
-    led->Write(flag);
-  };
+  using SwdGpio = LibXR::Debug::SwdGeneralGPIO<LibXR::CH32GPIO, LibXR::CH32GPIO>;
+  SwdGpio swd(swclk, swdio, 8);
+  LibXR::USB::DapLinkV2Class dap(swd, &nreset);
+  LibXR::USB::CDCUart cdc(1024, 1024, 8);
 
-  auto key_cb =
-      LibXR::GPIO::Callback::Create(key_cb_fun, reinterpret_cast<LibXR::GPIO*>(&led_r));
-
-  key.RegisterCallback(key_cb);
-
-  // Initialize Blink Task
-  void (*blink_task)(LibXR::GPIO*) = [](LibXR::GPIO* led)
-  {
-    static bool flag = false;
-    if (flag)
-    {
-      flag = false;
-    }
-    else
-    {
-      flag = true;
-    }
-
-    led->Write(flag);
-  };
-
-  auto blink_task_handle =
-      LibXR::Timer::CreateTask(blink_task, reinterpret_cast<LibXR::GPIO*>(&led_b), 1000);
-  LibXR::Timer::Add(blink_task_handle);
-  LibXR::Timer::Start(blink_task_handle);
-
-  // Initialize I2C
-  static uint8_t i2c_dma_buf[64];
-
-  LibXR::CH32I2C i2c(CH32_I2C1, LibXR::RawData{i2c_dma_buf, sizeof(i2c_dma_buf)}, GPIOB,
-                     GPIO_Pin_6, GPIOB, GPIO_Pin_7, 0, 0, 400000);
-
-  // Initialize UART
-  uint8_t uart1_tx_buffer[64], uart1_rx_buffer[64];
-
-  static LibXR::CH32UART uart1(CH32_USART2, uart1_rx_buffer, uart1_tx_buffer, GPIOA,
-                               GPIO_Pin_2, GPIOA, GPIO_Pin_3, 0, 25);
-
-  uart1.SetConfig({
-      .baudrate = 115200,
-      .parity = LibXR::UART::Parity::NO_PARITY,
-      .data_bits = 8,
-      .stop_bits = 1,
-  });
-
-  // Initialize USB device
-  static constexpr auto LANG_PACK_EN_US = LibXR::USB::DescriptorStrings::MakeLanguagePack(
-      LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "CDC Demo",
-      "XRUSB-DEMO-");
-
-  LibXR::USB::CDCUart cdc(4096, 4096, 8), cdc1;
-
-  LibXR::CH32USBOtgFS usb_dev(
-      /* EP */
-      {
-          {ep0_buffer},
-          {ep1_buffer},
-          {ep2_buffer},
-      },
-      /* packet size */
-      LibXR::USB::DeviceDescriptor::PacketSize0::SIZE_64,
-      /* vid pid bcd */
-      0x1209, 0x0001, 0x0100,
-      /* language */
-      {&LANG_PACK_EN_US},
-      /* config */
-      {{&cdc1}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
-
-  usb_dev.Init(false);
-
-  usb_dev.Start(false);
+  static constexpr auto USB_LANG_PACK_EN_US = LibXR::USB::DescriptorStrings::MakeLanguagePack(
+      LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "CMSIS-DAP",
+      "XRUSB-DEMO-XRDAP-");
 
   LibXR::CH32USBOtgHS usb_dev_hs(
-      /* EP */
       {
           {ep0_buffer_hs},
-          {ep1_buffer_tx_hs, true},
-          {ep2_buffer_rx_hs, true},
-          {ep3_buffer_tx_hs, false},
+          {ep1_dap_in_hs, true},
+          {ep2_dap_out_hs, false},
+          {ep3_cdc_in_hs, true},
+          {ep4_cdc_out_hs, false},
+          {ep5_cdc_comm_in_hs, true},
       },
-      /* vid pid bcd */
-      0x1209, 0x0001, 0x0100,
-      /* language */
-      {&LANG_PACK_EN_US},
-      /* config */
-      {{&cdc}}, {reinterpret_cast<void*>(0x1FFFF7E8), 12});
+      0x0D28, 0x2040, 0x0201, {&USB_LANG_PACK_EN_US}, {{&dap, &cdc}},
+      {reinterpret_cast<void*>(0x1FFFF7E8), 12});
 
   usb_dev_hs.Init(false);
-
   usb_dev_hs.Start(false);
-
-  // Initialize RamFS and Terminal
-  LibXR::RamFS ramfs;
-
-  LibXR::STDIO::read_ = cdc.read_port_;
-  LibXR::STDIO::write_ = cdc.write_port_;
-
-  LibXR::Terminal<> terminal(ramfs);
-
-  auto terminal_task_handle1 = LibXR::Timer::CreateTask(terminal.TaskFun, &terminal, 1);
-  LibXR::Timer::Add(terminal_task_handle1);
-  LibXR::Timer::Start(terminal_task_handle1);
 
   while (1)
   {
