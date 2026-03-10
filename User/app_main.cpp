@@ -73,7 +73,7 @@ extern "C" void app_main()
 {
   LibXR::CH32Timebase timebase;
   (void)timebase;
-  LibXR::PlatformInit(3, 8192);
+  LibXR::PlatformInit();
 
   // Original SWD path for WCH-LinkE style wiring: PB13(SWCLK) + PA9(SWDIO).
   LibXR::CH32GPIO swclk(GPIOB, GPIO_Pin_13);

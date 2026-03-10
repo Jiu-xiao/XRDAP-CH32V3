@@ -13,6 +13,9 @@
 
 void NMI_Handler(void) __attribute__((interrupt));
 void HardFault_Handler(void) __attribute__((interrupt));
+void SysTick_Handler(void) __attribute__((interrupt));
+
+extern void libxr_systick_handler(void) __attribute__((weak));
 
 /*********************************************************************
  * @fn      NMI_Handler
@@ -43,4 +46,12 @@ void HardFault_Handler(void)
   }
 }
 
+void SysTick_Handler(void)
+{
+  if (libxr_systick_handler != 0)
+  {
+    libxr_systick_handler();
+  }
+  SysTick->SR = 0;
+}
 

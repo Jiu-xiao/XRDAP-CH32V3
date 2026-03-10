@@ -63,14 +63,16 @@ target_compile_options(${PROJECT_NAME}.elf PRIVATE -Og)
 
 # Source files
 file(GLOB CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c")
-file(GLOB USER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/User/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/User/*.cpp")
+set(APP_USER_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/User/main.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/User/app_main.cpp
+)
 
 target_sources(${PROJECT_NAME}.elf
   PRIVATE
     ${CORE_SOURCES}
-    ${USER_SOURCES}
+    ${APP_USER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/startup_ch32v30x_D8C.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/portASM.S
 )
 
 # Includes
@@ -80,31 +82,21 @@ target_include_directories(${PROJECT_NAME}.elf PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
 )
 
-# Peripheral + FreeRTOS object library
+# Peripheral object library
 file(GLOB PERIPHERAL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c")
-file(GLOB FREERTOS_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/*.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/*.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang/heap_4.c"
-)
 
-add_library(Peripheral OBJECT ${PERIPHERAL_SOURCES} ${FREERTOS_SOURCES})
+add_library(Peripheral OBJECT ${PERIPHERAL_SOURCES})
 
 target_include_directories(Peripheral PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/Core
   ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/Common
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
 )
 
 target_compile_options(Peripheral PUBLIC -Og)
 target_link_libraries(${PROJECT_NAME}.elf PRIVATE Peripheral)
 
 # LibXR
-set(LIBXR_SYSTEM FreeRTOS)
+set(LIBXR_SYSTEM None)
 set(LIBXR_DRIVER ch)
 set(LIBXR_CH32_CONFIG_FILE ch32v30x_conf.h)
 add_subdirectory(libxr)
@@ -115,11 +107,6 @@ target_include_directories(xr PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/Core
   ${CMAKE_CURRENT_SOURCE_DIR}/User
   ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/Common
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
 )
 
 target_compile_options(xr PRIVATE -Og)
