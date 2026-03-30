@@ -1,9 +1,15 @@
 ENTRY( _start )
 
 __stack_size = 4096;
+__heap_size = 8192;
+__ram_top_reserved = DEFINED(RAM_TOP_RESERVED) ? RAM_TOP_RESERVED : 0x100;
 
 PROVIDE( _stack_size = __stack_size );
+PROVIDE( _heap_size = __heap_size );
+PROVIDE( _ram_top_reserved = __ram_top_reserved );
 
+__image_flash_base = DEFINED(APP_FLASH_BASE) ? APP_FLASH_BASE : 0x00002000;
+__image_flash_length = DEFINED(APP_FLASH_LENGTH) ? APP_FLASH_LENGTH : (128K - __image_flash_base);
 
 MEMORY
 {
@@ -11,8 +17,8 @@ MEMORY
    CH32V30x_D8 - CH32V303CB-CH32V303RB
 */
 /**/
-	FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 256K
-	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 64K
+	FLASH (rx) : ORIGIN = __image_flash_base, LENGTH = __image_flash_length
+	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = (32K - __ram_top_reserved)
 
     
 /* CH32V30x_D8C - CH32V307VC-CH32V307WC-CH32V307RC-CH32V305CC
@@ -59,7 +65,7 @@ SECTIONS
 		. = ALIGN(4);
 	} >FLASH AT>FLASH 
 
-	.fini :
+	.fini (READONLY) :
 	{
 		KEEP(*(SORT_NONE(.fini)))
 		. = ALIGN(4);
@@ -68,14 +74,14 @@ SECTIONS
 	PROVIDE( _etext = . );
 	PROVIDE( _eitcm = . );	
 
-	.preinit_array  :
+	.preinit_array (READONLY) :
 	{
 	  PROVIDE_HIDDEN (__preinit_array_start = .);
 	  KEEP (*(.preinit_array))
 	  PROVIDE_HIDDEN (__preinit_array_end = .);
 	} >FLASH AT>FLASH 
 	
-	.init_array     :
+	.init_array (READONLY) :
 	{
 	  PROVIDE_HIDDEN (__init_array_start = .);
 	  KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
@@ -83,7 +89,7 @@ SECTIONS
 	  PROVIDE_HIDDEN (__init_array_end = .);
 	} >FLASH AT>FLASH 
 	
-	.fini_array     :
+	.fini_array (READONLY) :
 	{
 	  PROVIDE_HIDDEN (__fini_array_start = .);
 	  KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
@@ -91,7 +97,7 @@ SECTIONS
 	  PROVIDE_HIDDEN (__fini_array_end = .);
 	} >FLASH AT>FLASH 
 	
-	.ctors          :
+	.ctors (READONLY) :
 	{
 	  /* gcc uses crtbegin.o to find the start of
 	     the constructors, so we make sure it is
@@ -113,7 +119,7 @@ SECTIONS
 	  KEEP (*(.ctors))
 	} >FLASH AT>FLASH 
 	
-	.dtors          :
+	.dtors (READONLY) :
 	{
 	  KEEP (*crtbegin.o(.dtors))
 	  KEEP (*crtbegin?.o(.dtors))
@@ -121,6 +127,16 @@ SECTIONS
 	  KEEP (*(SORT(.dtors.*)))
 	  KEEP (*(.dtors))
 	} >FLASH AT>FLASH 
+
+	.ramfunc :
+	{
+		. = ALIGN(4);
+		PROVIDE(_ramfunc_vma = .);
+		*(.ramfunc .ramfunc.*)
+		. = ALIGN(4);
+		PROVIDE(_eramfunc = .);
+	} >RAM AT>FLASH
+	PROVIDE(_ramfunc_lma = LOADADDR(.ramfunc));
 
 	.dalign :
 	{
@@ -138,7 +154,7 @@ SECTIONS
 	{
     	*(.gnu.linkonce.r.*)
     	*(.data .data.*)
-    	*(.gnu.linkonce.d.*)
+		*(.gnu.linkonce.d.*)
 		. = ALIGN(8);
     	PROVIDE( __global_pointer$ = . + 0x800 );
     	*(.sdata .sdata.*)
@@ -172,8 +188,12 @@ SECTIONS
 
     .stack :
     {
-        PROVIDE( _heap_end = . );    
-        . = ALIGN(4);
+        . = ALIGN(8);
+        PROVIDE( _heap_start = . );
+        . = . + __heap_size;
+        PROVIDE( _heap_end = . );
+
+        . = ALIGN(8);
         PROVIDE(_susrstack = . );
         . = . + __stack_size;
         PROVIDE( _eusrstack = .);
