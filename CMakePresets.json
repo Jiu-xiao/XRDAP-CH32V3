@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 19,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "app-dev",
+      "displayName": "CH32V305 DAP App Dev",
+      "description": "App-only DAP development build that preserves the custom three-stage layout assumptions without rebuilding stage1/stage3 bootloader targets.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-app-dev",
+      "cacheVariables": {
+        "CH32_BUILD_STAGE1_TRAMPOLINE": "OFF",
+        "CH32_BUILD_STAGE3_BOOTLOADER": "OFF",
+        "CH32_APP_USE_CUSTOM_BOOTLOADER": "ON",
+        "CH32_APP_FLASH_BASE": "0x00002000",
+        "CH32_APP_FLASH_LENGTH": "0x0001E000"
+      }
+    },
+    {
+      "name": "full-3stage",
+      "displayName": "CH32V305 DAP Full 3-Stage",
+      "description": "Full three-stage DAP build layout including stage1 trampoline and stage3 bootloader targets.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-3stage",
+      "cacheVariables": {
+        "CH32_BUILD_STAGE1_TRAMPOLINE": "ON",
+        "CH32_BUILD_STAGE3_BOOTLOADER": "ON",
+        "CH32_APP_USE_CUSTOM_BOOTLOADER": "ON",
+        "CH32_APP_FLASH_BASE": "0x00002000",
+        "CH32_APP_FLASH_LENGTH": "0x0001E000",
+        "CH32_STAGE3_BL_BASE": "0x00020000",
+        "CH32_STAGE3_BL_LENGTH": "0x00030000"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "app-dev",
+      "configurePreset": "app-dev",
+      "targets": [
+        "CH32V305FBP6.elf"
+      ]
+    },
+    {
+      "name": "full-3stage",
+      "configurePreset": "full-3stage"
+    }
+  ]
+}

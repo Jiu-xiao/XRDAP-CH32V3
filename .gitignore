@@ -1,3 +1,5 @@
 .history/**
 build/**
 .cache/**
+build-*/**
+libxr/.vscode/**
