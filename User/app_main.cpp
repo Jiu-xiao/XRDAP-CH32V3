@@ -19,6 +19,7 @@ static uint8_t ep0_buffer_hs[64];
 static uint8_t ep1_dap_in_hs[1024];
 static uint8_t ep2_dap_out_hs[1024];
 static constexpr uint32_t kAppWatchdogTimeoutMs = 2000u;
+static constexpr uint32_t kSwdDelayLoopsPerUs = 16u;
 
 class AppBootloaderPowerManager : public LibXR::CH32PowerManager {
  public:
@@ -138,7 +139,7 @@ extern "C" void app_main() {
   using SwdGpio = LibXR::Debug::SwdGeneralGPIO<LibXR::CH32GPIOSWC, LibXR::CH32GPIOSWD>;
   using DapLink = LibXR::USB::DapLinkV2Class<SwdGpio, 512u, 4u, 1024u, 2048u, 255u>;
 
-  static SwdGpio swd(swclk, swdio, 0, 500'000u);
+  static SwdGpio swd(swclk, swdio, kSwdDelayLoopsPerUs, 500'000u);
   static DapLink dap(swd, &nreset);
 
   AppBootloaderPowerManager power;
