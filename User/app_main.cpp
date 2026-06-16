@@ -125,6 +125,12 @@ extern "C" void app_main() {
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
   GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
 
+  // Keep board control pins low before the CMSIS-DAP SWD bridge starts.
+  static LibXR::CH32GPIO force_pb12_low(GPIOB, GPIO_Pin_12);
+  static LibXR::CH32GPIO force_pa5_low(GPIOA, GPIO_Pin_5);
+  force_pb12_low.Write(false);
+  force_pa5_low.Write(false);
+
   static LibXR::CH32GPIOSWC swclk;
   static LibXR::CH32GPIOSWD swdio;
   static LibXR::CH32GPIO nreset(GPIOC, GPIO_Pin_8);
