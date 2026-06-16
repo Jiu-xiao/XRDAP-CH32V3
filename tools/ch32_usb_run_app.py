@@ -10,6 +10,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Send vendor RUN_APP to DFU bootloader")
     parser.add_argument("--vid", type=lambda x: int(x, 0), default=0x1209)
     parser.add_argument("--pid", type=lambda x: int(x, 0), default=0x3072)
+    parser.add_argument("--alt-pid", type=lambda x: int(x, 0), default=0x3070)
     parser.add_argument("--request", type=lambda x: int(x, 0), default=0x5A)
     parser.add_argument("--timeout", type=float, default=10.0)
     args = parser.parse_args()
@@ -17,7 +18,15 @@ def main() -> int:
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
         dev = usb.core.find(idVendor=args.vid, idProduct=args.pid)
+        if dev is None and args.alt_pid != args.pid:
+            dev = usb.core.find(idVendor=args.vid, idProduct=args.alt_pid)
         if dev is None:
+            time.sleep(0.1)
+            continue
+
+        try:
+            dev.set_configuration(1)
+        except usb.core.USBError:
             time.sleep(0.1)
             continue
 
@@ -39,7 +48,7 @@ def main() -> int:
             pass
 
         dev.ctrl_transfer(0x41, args.request, 0, target, b"", timeout=1000)
-        print(f"RUN_APP_SENT intf={target}")
+        print(f"RUN_APP_SENT intf={target} pid=0x{dev.idProduct:04x}")
         return 0
 
     return 1

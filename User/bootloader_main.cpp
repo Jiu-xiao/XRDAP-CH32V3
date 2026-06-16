@@ -99,7 +99,7 @@ namespace
 #define CH32_BOOT_USB_VID 0x1209u
 #endif
 #ifndef CH32_BOOT_USB_PID
-#define CH32_BOOT_USB_PID 0x3070u
+#define CH32_BOOT_USB_PID 0x3072u
 #endif
 #ifndef CH32_BOOT_USB_BCD
 #define CH32_BOOT_USB_BCD 0x0001u

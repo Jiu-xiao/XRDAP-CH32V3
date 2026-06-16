@@ -3,7 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/ch32_wlink_common.sh"
 RUN_DIR=${1:-/home/xiao/runs/ch32_bl_flash_app_only_$(date -u +%Y%m%dT%H%M%SZ)}
-APP_BIN=${2:-/home/xiao/runs/xrdap_cdcuart_hw_verify_20260317T212400Z/build/CH32V305FBP6.bin}
+APP_BIN=${2:-"$SCRIPT_DIR/../build-3stage/CH32V305FBP6.bin"}
 mkdir -p "$RUN_DIR"
 python3 "$SCRIPT_DIR/ch32_make_seal.py" "$APP_BIN" "$RUN_DIR/seal.bin" > "$RUN_DIR/09_make_seal.log"
 ch32_wlink_retry "$RUN_DIR/10_halt.log" halt

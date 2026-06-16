@@ -108,7 +108,7 @@ set(CH32_STAGE3_BL_LENGTH 0x00030000 CACHE STRING
     "Stage-3 bootloader length (extra flash)")
 set(CH32_BOOT_USB_VID 0x1209 CACHE STRING
     "Stage-3 bootloader USB VID")
-set(CH32_BOOT_USB_PID 0x3070 CACHE STRING
+set(CH32_BOOT_USB_PID 0x3072 CACHE STRING
     "Stage-3 bootloader USB PID")
 set(CH32_BOOT_USB_BCD 0x0001 CACHE STRING
     "Stage-3 bootloader USB bcdDevice")
