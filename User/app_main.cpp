@@ -19,7 +19,6 @@ static uint8_t ep0_buffer_hs[64];
 static uint8_t ep1_dap_in_hs[1024];
 static uint8_t ep2_dap_out_hs[1024];
 static constexpr uint32_t kAppWatchdogTimeoutMs = 2000u;
-static constexpr uint32_t kAppAutoResetAfterMs = 15000u;
 
 class AppBootloaderPowerManager : public LibXR::CH32PowerManager {
  public:
@@ -161,13 +160,9 @@ extern "C" void app_main() {
   usb_dev_hs.Init(false);
   usb_dev_hs.Start(false);
   InitAppWatchdog();
-  const uint32_t app_start_ms = static_cast<uint32_t>(LibXR::Timebase::GetMilliseconds());
 
   while (1) {
-    const uint32_t now_ms = static_cast<uint32_t>(LibXR::Timebase::GetMilliseconds());
-    if ((kAppAutoResetAfterMs == 0u) || ((now_ms - app_start_ms) < kAppAutoResetAfterMs)) {
-      FeedAppWatchdog();
-    }
+    FeedAppWatchdog();
     dfu_runtime.Process();
     LibXR::Thread::Sleep(1);
   }
