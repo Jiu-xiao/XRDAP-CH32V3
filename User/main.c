@@ -1,17 +1,16 @@
-#include "FreeRTOS.h"
 #include "app_main.h"
-#include "core_riscv.h"
-#include "math.h"
-#include "task.h"
+#include "ch32v30x.h"
 
-static void DefaultTask(void* pvParameters)
+static void SysTickInit(void)
 {
-  (void)(pvParameters);
-  app_main();
-  while (1)
-  {
-    vTaskDelay(1000);
-  }
+  NVIC_SetPriority(SysTick_IRQn, 0x80);
+  NVIC_EnableIRQ(SysTick_IRQn);
+
+  SysTick->CTLR = 0;
+  SysTick->SR = 0;
+  SysTick->CNT = 0;
+  SysTick->CMP = SystemCoreClock / 1000;
+  SysTick->CTLR = 0x0F;
 }
 
 int main(void)
@@ -19,8 +18,14 @@ int main(void)
   NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
   SystemInit();
   SystemCoreClockUpdate();
+  SysTickInit();
   __enable_irq();
-  xTaskCreate(DefaultTask, "DefaultTask", 6000, NULL, 3, NULL);
-  vTaskStartScheduler();
+
+  app_main();
+
+  while (1)
+  {
+  }
+
   return 0;
 }
