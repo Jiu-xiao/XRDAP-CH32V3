@@ -1,0 +1,122 @@
+# Shared CH32V307 build setup for the bootloader and the application projects:
+# toolchain, CPU flags, board selection, the WCH peripheral library and the image
+# helpers. Each project includes this file before project().
+#
+# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, bootloader
+# key and LED) and boards/<name>.hpp (pins used by the firmware).
+
+if(NOT DEFINED XRDAP_ROOT)
+  get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+endif()
+set(XRDAP_PLATFORM_DIR "${XRDAP_ROOT}/platform")
+
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_VERSION 1)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
+
+# WCH RISC-V GCC 15.2 or newer (riscv32-wch-elf-gcc) on PATH, or a prefix that
+# includes the directory, e.g. "/opt/wch/bin/riscv32-wch-elf-".
+set(COMPILER_PREFIX "riscv32-wch-elf-" CACHE STRING "Cross compiler prefix")
+set(CMAKE_C_COMPILER ${COMPILER_PREFIX}gcc)
+set(CMAKE_CXX_COMPILER ${COMPILER_PREFIX}g++)
+set(CMAKE_ASM_COMPILER ${COMPILER_PREFIX}gcc)
+set(CMAKE_OBJCOPY ${COMPILER_PREFIX}objcopy)
+set(CMAKE_SIZE ${COMPILER_PREFIX}size)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+set(XRDAP_BOARD "evt" CACHE STRING "Board configuration in boards/")
+set_property(CACHE XRDAP_BOARD PROPERTY STRINGS evt wdap)
+if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+  message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
+endif()
+include("${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+
+# Flash layout (CPU addresses; the flash is also mapped at 0x08000000). The
+# bootloader starts at 0 and the application right after it; the last
+# XRDAP_SEAL_SIZE bytes of the application window hold the DFU seal record.
+set(XRDAP_BOOTLOADER_BASE 0x00000000)
+set(XRDAP_BOOTLOADER_SIZE 0x00010000)
+set(XRDAP_APP_BASE 0x00010000)
+set(XRDAP_APP_SIZE 0x00030000)
+set(XRDAP_SEAL_SIZE 256)
+
+set(XRDAP_CPU_FLAGS
+    "-march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f -msmall-data-limit=8 -mno-save-restore")
+
+macro(xrdap_setup_flags opt_level)
+  set(_common "-Wall -Wextra -fno-builtin -ffunction-sections -fdata-sections -fsigned-char")
+  set(_common "${_common} -fsingle-precision-constant -fno-unwind-tables")
+  set(_common "${_common} -fno-asynchronous-unwind-tables -${opt_level} -g")
+  set(CMAKE_C_FLAGS "${XRDAP_CPU_FLAGS} ${_common}" CACHE INTERNAL "" FORCE)
+  set(CMAKE_CXX_FLAGS
+      "${XRDAP_CPU_FLAGS} ${_common} -fno-use-cxa-atexit -fno-exceptions -fno-rtti -fno-threadsafe-statics"
+      CACHE INTERNAL "" FORCE)
+  set(CMAKE_ASM_FLAGS "${XRDAP_CPU_FLAGS} -x assembler-with-cpp" CACHE INTERNAL "" FORCE)
+  set(CMAKE_BUILD_TYPE "" CACHE STRING "" FORCE)
+endmacro()
+
+# WCH GCC 15 has no Zaamo-only ilp32f multilib; link against the compatible
+# hard-float library directories without changing the ISA used for compilation.
+macro(xrdap_setup_libraries)
+  foreach(_lib libgcc.a libc_nano.a)
+    execute_process(
+      COMMAND ${CMAKE_C_COMPILER} -march=rv32imafc_zaamo_zalrsc -mabi=ilp32f
+              -print-file-name=${_lib}
+      OUTPUT_VARIABLE _path OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    get_filename_component(_dir "${_path}" DIRECTORY)
+    link_directories(BEFORE "${_dir}")
+  endforeach()
+  if(CMAKE_C_COMPILER_VERSION VERSION_LESS 15.2)
+    message(FATAL_ERROR "XR-DAP-V307 needs WCH RISC-V GCC 15.2 or newer")
+  endif()
+endmacro()
+
+# Defines shared by every target: chip family, crystal and the layout.
+set(XRDAP_COMMON_DEFINES
+    CH32V30x_D8C
+    HSE_VALUE=${XRDAP_HSE_HZ}
+    XRDAP_APP_BASE=${XRDAP_APP_BASE}
+    XRDAP_APP_SIZE=${XRDAP_APP_SIZE}
+    XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
+    XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
+
+set(XRDAP_PLATFORM_INCLUDES
+    "${XRDAP_PLATFORM_DIR}/Core"
+    "${XRDAP_PLATFORM_DIR}/Peripheral/inc"
+    "${XRDAP_ROOT}/boards"
+    "${XRDAP_ROOT}/common")
+
+# WCH core files and peripheral library, built once per project.
+macro(xrdap_add_platform_library)
+  file(GLOB _peripheral_sources "${XRDAP_PLATFORM_DIR}/Peripheral/src/*.c")
+  file(GLOB _core_sources "${XRDAP_PLATFORM_DIR}/Core/*.c")
+  add_library(platform OBJECT ${_peripheral_sources} ${_core_sources}
+              "${XRDAP_PLATFORM_DIR}/startup_ch32v30x_D8C.S"
+              "${XRDAP_PLATFORM_DIR}/syscalls.c")
+  target_include_directories(platform PUBLIC ${XRDAP_PLATFORM_INCLUDES})
+  target_compile_definitions(platform PUBLIC ${XRDAP_COMMON_DEFINES})
+endmacro()
+
+# Links `target` into the flash window [base, base + size) with a C heap of
+# heap_size bytes (operator new on bare metal, newlib malloc) and emits .hex/.bin.
+function(xrdap_add_image target base size heap_size)
+  target_link_options(${target} PRIVATE
+    -T "${XRDAP_PLATFORM_DIR}/Link.ld"
+    -Wl,--defsym=IMAGE_FLASH_BASE=${base}
+    -Wl,--defsym=IMAGE_FLASH_LENGTH=${size}
+    -Wl,--defsym=HEAP_SIZE=${heap_size}
+    -nostartfiles -Wl,--gc-sections -Wl,--print-memory-usage
+    -Wl,-Map=${PROJECT_BINARY_DIR}/${target}.map
+    --specs=nano.specs --specs=nosys.specs
+    -march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f)
+  target_link_libraries(${target} PRIVATE m c)
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${target}> ${PROJECT_BINARY_DIR}/${target}.hex
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${target}> ${PROJECT_BINARY_DIR}/${target}.bin
+    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${target}>
+    VERBATIM)
+endfunction()
