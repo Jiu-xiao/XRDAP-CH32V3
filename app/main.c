@@ -18,7 +18,7 @@ int main(void)
   SystemInit();
   SystemCoreClockUpdate();
   __enable_irq();
-  xTaskCreate(AppTask, "app", 4096, NULL, 3, NULL);
+  xTaskCreate(AppTask, "app", 2048, NULL, 3, NULL);  // 8 KB; about 1 KB is used
   vTaskStartScheduler();
   for (;;)
   {

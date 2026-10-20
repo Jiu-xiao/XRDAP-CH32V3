@@ -32,4 +32,19 @@ inline constexpr BoardPin kNreset{kPortC, 1};
 /// P2-6 TDI_O、P2-11 TDO_O / P2-6 TDI_O, P2-11 TDO_O.
 inline constexpr BoardPin kTdi{kPortC, 2};
 inline constexpr BoardPin kTdo{kPortC, 3};
+
+/// VG2392S240X0M2 (SX1281) on SPI1 / VG2392S240X0M2（SX1281）接 SPI1.
+inline constexpr BoardPin kRadioSck{kPortA, 5};
+inline constexpr BoardPin kRadioMiso{kPortA, 6};
+inline constexpr BoardPin kRadioMosi{kPortA, 7};
+inline constexpr BoardPin kRadioNss{kPortC, 4};
+inline constexpr BoardPin kRadioNreset{kPortC, 5};
+inline constexpr BoardPin kRadioBusy{kPortB, 0};
+inline constexpr BoardPin kRadioDio1{kPortB, 1};
+/// DIO2 shares PB2 with BOOT1 (R6) / DIO2 与 BOOT1 共用 PB2（R6）.
+inline constexpr BoardPin kRadioDio2{kPortB, 2};
+inline constexpr BoardPin kRadioDio3{kPortB, 10};
+/// Module RF switch: TXEN high to transmit, RXEN high to receive / 模块射频开关.
+inline constexpr BoardPin kRadioTxEn{kPortB, 11};
+inline constexpr BoardPin kRadioRxEn{kPortB, 12};
 }  // namespace XrDap::Board

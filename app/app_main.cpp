@@ -9,16 +9,24 @@
 #include <cstdint>
 
 #include XRDAP_BOARD_HEADER
+#include "boot_guard.hpp"
 #include "boot_mailbox.h"
 #include "ch32_gpio.hpp"
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
+#include "config.hpp"
 #include "daplink_v2_profile_swd.hpp"
 #include "debug/swd_general_gpio.hpp"
 #include "dfu/dfu_runtime.hpp"
 #include "fast_gpio.hpp"
 #include "libxr.hpp"
 #include "probe_info.hpp"
+#ifdef XRDAP_HAS_RADIO
+#include "pairing.hpp"
+#include "radio_command.hpp"
+#include "radio_link.hpp"
+#include "sx1281.hpp"
+#endif
 #include "thread.hpp"
 
 namespace
@@ -30,10 +38,12 @@ constexpr uint16_t kUsbPid = 0x6199;
 constexpr uint16_t kUsbBcd = 0x0300;  // distinct from the ESP32 XR-DAP releases
 constexpr uint16_t kDapPacketSize = 1024;
 constexpr uint8_t kDapPacketCount = 4;
-// Delay-loop iterations per microsecond of the SWD half period at 144 MHz. One
-// iteration takes about 21.5 ns on top of a fixed ~100 ns per half period; 46 still
-// ran 0.6 % fast at 50 kHz, 47 keeps every setting at or below the requested clock.
-constexpr uint32_t kSwdLoopsPerUs = 47;
+// Delay-loop iterations per microsecond of the SWD half period. At 144 MHz one iteration
+// takes about 21.5 ns on top of a fixed ~100 ns per half period; 46 still ran 0.6 % fast
+// at 50 kHz, 47 keeps every setting at or below the requested clock. Other core clocks
+// scale it, rounded up.
+constexpr uint32_t kSwdLoopsPerUs =
+    static_cast<uint32_t>((47ULL * XRDAP_APP_SYSCLK_HZ + 143'999'999ULL) / 144'000'000ULL);
 
 using Swclk = FastGpioFor<Board::kSwclk>;
 using Swdio = FastGpioFor<Board::kSwdio>;
@@ -58,6 +68,8 @@ extern "C" void app_main()
 {
   static LibXR::CH32Timebase timebase;
   LibXR::PlatformInit(3, 8192);
+  BootGuardStart();
+  ConfigInit();
 
   static Swclk swclk;
   static Swdio swdio;
@@ -69,6 +81,19 @@ extern "C" void app_main()
                  swd, &nreset);
   SetProbeInfo(dap, Board::kName);
   static LibXR::USB::DfuRuntimeClass dfu(RestartIntoBootloader);
+#ifdef XRDAP_HAS_RADIO
+  Radio().Init();
+  // Commands from the peer: 0x9F for this probe's radio and settings, DAP for the target.
+  RadioLinkInit(+[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+                {
+                  if (req[0] == 0x9F) return RadioVendorCommand(req, req_len, resp, resp_cap);
+                  uint16_t size = 0;
+                  (void)dap.ExecuteExternal(req, req_len, resp, resp_cap, size);
+                  return size;
+                });
+  dap.SetCommandHook(RadioCommandHook);
+  RadioLinkApplyConfig();
+#endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, kVendorName, kUsbProductName,
@@ -81,10 +106,23 @@ extern "C" void app_main()
 
   // LibXR runs DAP commands when the application calls Step(). Step waits at most
   // kStepWaitMs for a command, so a DFU DETACH is carried out from the same loop soon
-  // after its advertised timeout.
+  // after its advertised timeout. With the radio in use the loop does not wait: it
+  // serves the radio between USB commands and watches KEY2 for pairing.
   constexpr uint32_t kStepWaitMs = 10;
   for (;;)
   {
+    BootGuardFeed();
+#ifdef XRDAP_HAS_RADIO
+    if (GetConfig().role != RoleSetting::LOCAL || GetRadioRole() != RadioRole::LOCAL)
+    {
+      PairingPoll();
+      RadioLinkService();
+      (void)dap.Step(0);
+      dfu.Process();
+      continue;
+    }
+    PairingPoll();
+#endif
     (void)dap.Step(kStepWaitMs);
     dfu.Process();
   }

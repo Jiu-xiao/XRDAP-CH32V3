@@ -34,15 +34,20 @@ if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()
 include("${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
+  set(XRDAP_APP_SYSCLK_HZ 144000000)
+endif()
 
 # Flash layout (CPU addresses; the flash is also mapped at 0x08000000). The
 # bootloader starts at 0 and the application right after it; the last
-# XRDAP_SEAL_SIZE bytes of the application window hold the DFU seal record.
+# XRDAP_SEAL_SIZE bytes of the application window hold the DFU seal record and the
+# XRDAP_CONFIG_SIZE bytes in front of it the application's settings (app/config.hpp).
 set(XRDAP_BOOTLOADER_BASE 0x00000000)
 set(XRDAP_BOOTLOADER_SIZE 0x00010000)
 set(XRDAP_APP_BASE 0x00010000)
 set(XRDAP_APP_SIZE 0x00030000)
 set(XRDAP_SEAL_SIZE 256)
+set(XRDAP_CONFIG_SIZE 2048)
 
 set(XRDAP_CPU_FLAGS
     "-march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f -msmall-data-limit=8 -mno-save-restore")
@@ -79,9 +84,11 @@ endmacro()
 set(XRDAP_COMMON_DEFINES
     CH32V30x_D8C
     HSE_VALUE=${XRDAP_HSE_HZ}
+    XRDAP_APP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
     XRDAP_APP_BASE=${XRDAP_APP_BASE}
     XRDAP_APP_SIZE=${XRDAP_APP_SIZE}
     XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
+    XRDAP_CONFIG_SIZE=${XRDAP_CONFIG_SIZE}
     XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
 
 set(XRDAP_PLATFORM_INCLUDES

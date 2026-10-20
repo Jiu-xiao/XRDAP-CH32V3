@@ -27,8 +27,8 @@ APP_ID = (0x1D50, 0x6199)
 BOOTLOADER_ID = (0x1209, 0x3072)
 
 DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
-DFU_DETACH, DFU_DNLOAD, DFU_GETSTATUS, DFU_CLRSTATUS = 0, 1, 3, 4
-STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 5, 8, 10
+DFU_DETACH, DFU_DNLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 3, 4, 6
+STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
 MIN_POLL_MS = 50
 OUT = usb.util.CTRL_OUT | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
@@ -37,7 +37,13 @@ IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTER
 def find(ids, serial=None):
     backend = libusb_package.get_libusb1_backend()
     for dev in usb.core.find(find_all=True, idVendor=ids[0], idProduct=ids[1], backend=backend):
-        if serial is None or (dev.serial_number or "").upper().endswith(serial.upper()):
+        if serial is None:
+            return dev
+        try:
+            number = dev.serial_number or ""
+        except (ValueError, NotImplementedError, usb.core.USBError):
+            continue  # another program holds this probe, so it cannot be the one asked for
+        if number.upper().endswith(serial.upper()):
             return dev
     return None
 
@@ -106,10 +112,20 @@ def download(path, serial):
     if dev is None:
         raise RuntimeError("bootloader 1209:3072 not found")
     intf, transfer = dfu_interface(dev)
+    # Pad with erased flash to whole blocks: the bootloader sometimes fails a final short
+    # block (seen with a 800-byte one), while whole blocks always go through.
+    image += bytes([0xFF]) * (-len(image) % transfer)
     usb.util.claim_interface(dev, intf)
+    # An interrupted download leaves the bootloader in dfuERROR or mid-download; start
+    # from dfuIDLE either way.
     status, _, state = get_status(dev, intf)
     if state == STATE_ERROR:
         dev.ctrl_transfer(OUT, DFU_CLRSTATUS, 0, intf, None)
+    elif state != STATE_IDLE:
+        dev.ctrl_transfer(OUT, DFU_ABORT, 0, intf, None)
+    status, _, state = get_status(dev, intf)
+    if state != STATE_IDLE:
+        raise RuntimeError(f"bootloader not idle: status {status}, state {state}")
     started = time.monotonic()
     for block, offset in enumerate(range(0, len(image), transfer)):
         dev.ctrl_transfer(OUT, DFU_DNLOAD, block, intf, image[offset:offset + transfer],
@@ -146,7 +162,17 @@ def main():
         return 0 if ok else 1
     if not args.image:
         ap.error("image is required")
-    download(args.image, args.serial)
+    # The bootloader now and then refuses a GETSTATUS while its flash is busy (a USB
+    # pipe error); the download then starts over from dfuIDLE.
+    for attempt in range(3):
+        try:
+            download(args.image, args.serial)
+            break
+        except usb.core.USBError as error:
+            print(f"\ndownload failed ({error}), starting over")
+            time.sleep(0.5)
+    else:
+        return 1
     ok = wait_for(APP_ID, args.serial, 10) is not None
     print("application running" if ok else "application did not appear")
     return 0 if ok else 1

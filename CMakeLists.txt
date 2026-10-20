@@ -29,7 +29,25 @@ add_subdirectory(libxr)
 target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES} ${FREERTOS_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
-add_executable(xrdap.elf app/main.c app/app_main.cpp app/probe_info.cpp)
+add_executable(xrdap.elf app/main.c app/app_main.cpp app/probe_info.cpp app/boot_guard.cpp
+                         app/config.cpp)
 target_include_directories(xrdap.elf PRIVATE app)
+if(XRDAP_HAS_RADIO)
+  # Role and modulation are settings in flash (app/config.hpp); one image serves both
+  # ends of the link. FLRC coding rate: 0x04 CR 1 (no FEC), 0x02 CR 3/4, 0x00 CR 1/2.
+  set(XRDAP_RADIO_CODING_RATE 0x04 CACHE STRING "FLRC coding rate")
+  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/radio_link.cpp app/radio_command.cpp
+                                   app/pairing.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO
+                                               XRDAP_RADIO_CODING_RATE=${XRDAP_RADIO_CODING_RATE})
+  # Driver switches for experiments (app/sx1281.hpp), comma separated, e.g.
+  # -DXRDAP_RADIO_DEFINES=XRDAP_RADIO_AUTOFS=0,XRDAP_RADIO_SPI_DMA_MIN=24
+  set(XRDAP_RADIO_DEFINES "" CACHE STRING "Extra radio driver defines")
+  string(REPLACE "," ";" _radio_defines "${XRDAP_RADIO_DEFINES}")
+  target_compile_definitions(xrdap.elf PRIVATE ${_radio_defines})
+endif()
 target_link_libraries(xrdap.elf PRIVATE platform freertos xr)
-xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_SIZE} 0x1000)
+# The image stops in front of the settings and the seal.
+math(EXPR XRDAP_APP_IMAGE_SIZE "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}"
+     OUTPUT_FORMAT HEXADECIMAL)
+xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_IMAGE_SIZE} 0x1000)

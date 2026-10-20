@@ -97,7 +97,7 @@
 #define configTICK_RATE_HZ				( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES			( 10 )
 #define configMINIMAL_STACK_SIZE		( ( unsigned short ) 384 ) /* Can be as low as 60 but some of the demo tasks that use this constant require it to be higher. */
-#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 44 * 1024 ) )
+#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 38 * 1024 ) ) /* 13 KB were still free at 42 KB (wdap) */
 #define configMAX_TASK_NAME_LEN			( 16 )
 #define configUSE_TRACE_FACILITY		1
 #define configUSE_16_BIT_TICKS			0
@@ -130,6 +130,7 @@
 to exclude the API function. */
 #define INCLUDE_vTaskPrioritySet			1
 #define INCLUDE_uxTaskPriorityGet			1
+#define INCLUDE_uxTaskGetStackHighWaterMark	1
 #define INCLUDE_vTaskDelete					1
 #define INCLUDE_vTaskCleanUpResources		1
 #define INCLUDE_vTaskSuspend				1
