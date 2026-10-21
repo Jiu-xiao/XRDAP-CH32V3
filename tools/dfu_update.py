@@ -29,7 +29,6 @@ BOOTLOADER_ID = (0x1209, 0x3072)
 DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
 DFU_DETACH, DFU_DNLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 3, 4, 6
 STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
-MIN_POLL_MS = 50
 OUT = usb.util.CTRL_OUT | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 
@@ -77,10 +76,9 @@ def wait_idle(dev, intf):
             raise RuntimeError(f"DFU error: status {status}, state {state}")
         if state == STATE_DNLOAD_IDLE:
             return
-        # The device stalls a GETSTATUS that arrives before its poll deadline, and the
-        # LibXR DFU backend reports 10-25 ms while a 4 KB CH32 block takes ~350 ms and
-        # delays its USB bookkeeping; polling at no less than 50 ms is reliable.
-        time.sleep(max(poll_ms + 5, MIN_POLL_MS) / 1000)
+        # DFU 1.1: wait bwPollTimeout before the next GETSTATUS; the bootloader reports
+        # the measured duration of its last flash step.
+        time.sleep(poll_ms / 1000)
 
 
 def wait_for(ids, serial, seconds):
@@ -112,9 +110,6 @@ def download(path, serial):
     if dev is None:
         raise RuntimeError("bootloader 1209:3072 not found")
     intf, transfer = dfu_interface(dev)
-    # Pad with erased flash to whole blocks: the bootloader sometimes fails a final short
-    # block (seen with a 800-byte one), while whole blocks always go through.
-    image += bytes([0xFF]) * (-len(image) % transfer)
     usb.util.claim_interface(dev, intf)
     # An interrupted download leaves the bootloader in dfuERROR or mid-download; start
     # from dfuIDLE either way.
@@ -143,7 +138,7 @@ def download(path, serial):
                 raise RuntimeError(f"manifest failed: status {status}, state {state}")
             if state == STATE_MANIFEST_WAIT_RESET:
                 break
-            time.sleep(max(poll_ms + 5, MIN_POLL_MS) / 1000)
+            time.sleep(poll_ms / 1000)
     except usb.core.USBError:
         pass  # already gone: the application is starting
     usb.util.dispose_resources(dev)
@@ -162,17 +157,7 @@ def main():
         return 0 if ok else 1
     if not args.image:
         ap.error("image is required")
-    # The bootloader now and then refuses a GETSTATUS while its flash is busy (a USB
-    # pipe error); the download then starts over from dfuIDLE.
-    for attempt in range(3):
-        try:
-            download(args.image, args.serial)
-            break
-        except usb.core.USBError as error:
-            print(f"\ndownload failed ({error}), starting over")
-            time.sleep(0.5)
-    else:
-        return 1
+    download(args.image, args.serial)
     ok = wait_for(APP_ID, args.serial, 10) is not None
     print("application running" if ok else "application did not appear")
     return 0 if ok else 1

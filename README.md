@@ -36,7 +36,7 @@ pip install pyusb libusb-package
 python tools/dfu_update.py xrdap.elf.bin
 ```
 
-应用除 DAP 接口外还有一个 DFU runtime 接口。`dfu_update.py` 向它发 DFU DETACH，探针重启进入 bootloader；接了多块探针时用 `--serial` 指定序列号。也可以按住板上的 bootloader 键插上 USB，bootloader 同样停在 DFU 模式。`dfu_update.py` 经标准 USB DFU 1.1 写入镜像，bootloader 在末尾写入校验记录（seal）并启动新应用。Windows 上 bootloader 声明 WinUSB，不用另装驱动。之后每次上电，bootloader 校验应用区通过就直接启动应用，电脑上出现 `1D50:6199`（XR-DAP-V307 CMSIS-DAP），序列号为 `XRobot-XRDAP-` 加芯片 UID。
+应用除 DAP 接口外还有一个 DFU runtime 接口。`dfu_update.py` 向它发 DFU DETACH，探针重启进入 bootloader；接了多块探针时用 `--serial` 指定序列号。也可以按住板上的 bootloader 键插上 USB，bootloader 同样停在 DFU 模式。`dfu_update.py` 经标准 USB DFU 1.1 写入镜像，bootloader 在末尾写入校验记录（seal）并启动新应用。Windows 上 bootloader 声明 WinUSB，不用另装驱动。也可以用 dfu-util（0.11 实测可用，会提示镜像没有 DFU 后缀，不影响写入），它同样先发 DETACH 再写入：`dfu-util -d 1d50:6199,1209:3072 -S XRobot-XRDAP-<UID> -a 0 -D xrdap.elf.bin`。之后每次上电，bootloader 校验应用区通过就直接启动应用，电脑上出现 `1D50:6199`（XR-DAP-V307 CMSIS-DAP），序列号为 `XRobot-XRDAP-` 加芯片 UID。
 
 用 [XRDAP-Host](https://github.com/Jiu-xiao/XRDAP-Host) 的 `xrdap` 可以确认探针：
 
