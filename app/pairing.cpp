@@ -7,15 +7,17 @@
 #include "boot_guard.hpp"
 #include "ch32_gpio.hpp"
 #include "config.hpp"
+#include "link_protocol.hpp"
+#include "pair_identity.hpp"
 #include "probe_info.hpp"
-#include "radio_link.hpp"
+#include "sx1281.hpp"
 #include "timebase.hpp"
 
 namespace XrDap
 {
 namespace
 {
-constexpr uint8_t kHello = 5;
+constexpr uint8_t kHello = Link::kHello;
 constexpr uint8_t kHelloSize = 1 + 2 * kChipUidSize;
 constexpr uint32_t kHoldUs = 3'000'000;
 constexpr uint32_t kPairUs = 10'000'000;
@@ -28,28 +30,6 @@ uint32_t pressed_since = 0;
 bool pressed = false, fired = false;
 
 uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds()); }
-
-uint32_t Fnv1a(const uint8_t* data, size_t size, uint32_t hash = 2166136261U)
-{
-  for (size_t i = 0; i < size; ++i) hash = (hash ^ data[i]) * 16777619U;
-  return hash;
-}
-
-/// Bit changes along a 32-bit word: a sync word needs enough of them to stand out from
-/// the preamble and from an idle channel.
-int Transitions(uint32_t word)
-{
-  return __builtin_popcount(word ^ (word >> 1)) - static_cast<int>((word >> 31) & 1U);
-}
-
-uint32_t LinkId(const uint8_t* a, const uint8_t* b)
-{
-  // Smaller UID first, so that both probes compute the same id.
-  const bool a_first = std::memcmp(a, b, kChipUidSize) < 0;
-  uint32_t hash = Fnv1a(a_first ? a : b, kChipUidSize);
-  hash = Fnv1a(a_first ? b : a, kChipUidSize, hash);
-  return hash != 0U ? hash : 1U;
-}
 
 /// A HELLO packet: own UID, then the peer's (zeros while unknown).
 uint8_t Hello(uint8_t* packet, const uint8_t* peer)
@@ -70,11 +50,12 @@ bool KeyDown()
   return !key.Read();
 }
 
-void RunPairing()
+/// Returns true when the settings changed.
+bool RunPairing()
 {
   state = PairState::RUNNING;
   Sx1281& radio = Radio();
-  radio.Configure(true, Sx1281::DefaultIdentity());
+  radio.Configure(true, DefaultIdentity());
   radio.Start();
 
   uint8_t peer[kChipUidSize] = {};
@@ -118,7 +99,7 @@ void RunPairing()
   {
     Config config = GetConfig();
     config.paired = 1;
-    config.link_id = LinkId(ChipUid(), peer);
+    config.link_id = LinkId(ChipUid(), peer, kChipUidSize);
     config.modulation = Modulation::GFSK;
     std::memcpy(config.peer_uid, peer, kChipUidSize);
     state = SaveConfig(config) ? PairState::DONE : PairState::FAILED;
@@ -127,26 +108,13 @@ void RunPairing()
   {
     state = PairState::FAILED;
   }
-  RadioLinkApplyConfig();
+  return true;  // the radio was taken over; the caller applies the settings again
 }
 }  // namespace
 
-Sx1281::Identity PairIdentity(uint32_t link_id)
-{
-  Sx1281::Identity identity{};
-  // 2403..2479 MHz keeps the 2.4 MHz GFSK bandwidth inside 2400..2483.5 MHz.
-  identity.frequency_hz = (2403U + link_id % 77U) * 1'000'000U;
-  identity.crc_seed = static_cast<uint16_t>(link_id >> 16 ^ link_id);
-  uint32_t word = Fnv1a(reinterpret_cast<const uint8_t*>(&link_id), sizeof(link_id));
-  while (Transitions(word) < 10 || Transitions(word) > 22)
-    word = Fnv1a(reinterpret_cast<const uint8_t*>(&word), sizeof(word));
-  for (int i = 0; i < 4; ++i) identity.sync_word[i] = static_cast<uint8_t>(word >> (24 - 8 * i));
-  return identity;
-}
-
 void PairingRequest() { requested = true; }
 
-void PairingPoll()
+bool PairingPoll()
 {
   const bool down = KeyDown();
   if (down && !pressed)
@@ -160,9 +128,9 @@ void PairingPoll()
     fired = true;
   }
   pressed = down;
-  if (!requested) return;
+  if (!requested) return false;
   requested = false;
-  RunPairing();
+  return RunPairing();
 }
 
 PairState GetPairState() { return state; }

@@ -10,24 +10,28 @@
 
 #include XRDAP_BOARD_HEADER
 #include "boot_guard.hpp"
-#include "boot_mailbox.h"
 #include "ch32_gpio.hpp"
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
 #include "config.hpp"
+#include "dap_vendor.hpp"
 #include "daplink_v2_profile_swd.hpp"
 #include "debug/swd_general_gpio.hpp"
 #include "dfu/dfu_runtime.hpp"
 #include "fast_gpio.hpp"
 #include "libxr.hpp"
 #include "probe_info.hpp"
+#include "reserved_ram.h"
+#include "sampler_task.hpp"
+#ifdef XRDAP_HAS_STATUS_LIGHTS
+#include "status_lights.hpp"
+#endif
 #ifdef XRDAP_HAS_RADIO
+#include "dap_session.hpp"
 #include "pairing.hpp"
 #include "radio_command.hpp"
-#include "radio_link.hpp"
 #include "sx1281.hpp"
 #endif
-#include "thread.hpp"
 
 namespace
 {
@@ -38,21 +42,52 @@ constexpr uint16_t kUsbPid = 0x6199;
 constexpr uint16_t kUsbBcd = 0x0300;  // distinct from the ESP32 XR-DAP releases
 constexpr uint16_t kDapPacketSize = 1024;
 constexpr uint8_t kDapPacketCount = 4;
-// Delay-loop iterations per microsecond of the SWD half period. At 144 MHz one iteration
-// takes about 21.5 ns on top of a fixed ~100 ns per half period; 46 still ran 0.6 % fast
-// at 50 kHz, 47 keeps every setting at or below the requested clock. Other core clocks
-// scale it, rounded up.
+constexpr uint32_t kSamplerPriority = 5;
+#ifdef XRDAP_HAS_STATUS_LIGHTS
+// The DAP loop runs at 3 and does not block while the radio is in use; the light task
+// shares its priority so time slicing still runs it.
+constexpr uint32_t kLightsPriority = 3;
+#endif
+// Delay-loop iterations per microsecond of the SWD half period, as LibXR's
+// SwdGeneralGPIO counts them. A half period takes a fixed ~60 ns plus ~14.6 ns per
+// iteration at 216 MHz, which LibXR does not model. The SWD clock does not need to be
+// exact: with this factor settings from ~24 MHz up use the no-delay path (~14 MHz on
+// wdap), and slow settings run up to ~40 % fast. Other core clocks scale it.
 constexpr uint32_t kSwdLoopsPerUs =
-    static_cast<uint32_t>((47ULL * XRDAP_APP_SYSCLK_HZ + 143'999'999ULL) / 144'000'000ULL);
+    static_cast<uint32_t>((48ULL * XRDAP_APP_SYSCLK_HZ) / 216'000'000ULL);
 
 using Swclk = FastGpioFor<Board::kSwclk>;
 using Swdio = FastGpioFor<Board::kSwdio>;
 using Swd = LibXR::Debug::SwdGeneralGPIO<Swclk, Swdio>;
-using Dap = LibXR::USB::DapLinkV2Class<Swd, kDapPacketSize, kDapPacketCount, kDapPacketSize>;
+using Dap =
+    LibXR::USB::DapLinkV2Class<Swd, kDapPacketSize, kDapPacketCount, kDapPacketSize>;
 
 alignas(64) uint8_t ep0_buffer[64];
 alignas(64) uint8_t ep1_dap_in[2 * kDapPacketSize];
 alignas(64) uint8_t ep1_dap_out[2 * kDapPacketSize];
+
+// The DFU runtime interface, also counting USB bus resets (libxr reports them to every
+// class): sampling started from USB stops when the bus resets, as the host is gone.
+class DfuRuntime : public LibXR::USB::DfuRuntimeClass
+{
+ public:
+  using DfuRuntimeClass::DfuRuntimeClass;
+
+  static uint32_t BusResets(void* ctx) { return static_cast<DfuRuntime*>(ctx)->resets_; }
+
+  void OnDeviceEvent(bool in_isr, LibXR::USB::DeviceEvent event,
+                     uint8_t endpoint) override
+  {
+    if (event == LibXR::USB::DeviceEvent::RESET)
+    {
+      resets_ = resets_ + 1U;
+    }
+    DfuRuntimeClass::OnDeviceEvent(in_isr, event, endpoint);
+  }
+
+ private:
+  volatile uint32_t resets_ = 0;
+};
 
 // DFU DETACH: leave a request in the boot mailbox and reset into the bootloader.
 void RestartIntoBootloader(void*)
@@ -79,28 +114,72 @@ extern "C" void app_main()
 
   static Dap dap(LibXR::USB::Endpoint::EPNumber::EP1, LibXR::USB::Endpoint::EPNumber::EP1,
                  swd, &nreset);
-  SetProbeInfo(dap, Board::kName);
-  static LibXR::USB::DfuRuntimeClass dfu(RestartIntoBootloader);
+  static char serial[SerialBufferSize(kChipUidSize)];
+  FormatSerial(ChipUid(), kChipUidSize, serial);
+  SetProbeInfo(dap, {kProductName, Board::kName, serial, kFirmwareVersion});
+  static DfuRuntime dfu(RestartIntoBootloader);
+  // XR vendor extension (0x80..0x85: multi-address read/write, probe-side sampling) from
+  // XRDAP-Core. Its sampling task outranks the DAP loop (priority 3).
+  static XrDap::DapVendor vendor(swd, kDapPacketSize);
+  vendor.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
+  StartSamplerTask(vendor, kSamplerPriority);
+#ifdef XRDAP_HAS_STATUS_LIGHTS
+  StatusLightsBegin(
+      kLightsPriority, vendor, [](void* d) { return static_cast<Dap*>(d)->IsInited(); },
+      &dap);
+#endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
   // Commands from the peer: 0x9F for this probe's radio and settings, DAP for the target.
-  RadioLinkInit(+[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
-                {
-                  if (req[0] == 0x9F) return RadioVendorCommand(req, req_len, resp, resp_cap);
-                  uint16_t size = 0;
-                  (void)dap.ExecuteExternal(req, req_len, resp, resp_cap, size);
-                  return size;
-                });
-  dap.SetCommandHook(RadioCommandHook);
-  RadioLinkApplyConfig();
+  // When the remote session ends, what the peer started stops with it (B6). Until
+  // XRDAP-Core has a radio transport, "what the peer started" is sampling begun while a
+  // radio session drove the probe.
+  static bool peer_drove_probe = false;
+  DapSessionInit(
+      +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+      {
+        if (req[0] == kProbeCommand)
+          return RadioVendorCommand(req, req_len, resp, resp_cap);
+        peer_drove_probe = true;
+        uint16_t size = 0;
+        (void)dap.ExecuteExternal(req, req_len, resp, resp_cap, size);
+        return size;
+      },
+      +[]()
+      {
+        if (!peer_drove_probe) return;
+        peer_drove_probe = false;
+        vendor.OnTransportClosed();
+      });
+  // The radio link takes 0x9F (this probe's radio and settings, not DAP) and, during a
+  // session over the radio, every command; those forwarded still count as DAP activity.
+  // What runs here goes to the vendor extension, which passes standard commands on.
+  dap.SetCommandHook(
+      +[](void* ctx, const uint8_t* req, uint16_t req_len, uint8_t* resp,
+          uint16_t resp_cap, uint16_t& out_len)
+      {
+        if (RadioCommandHook(req, req_len, resp, resp_cap, out_len))
+        {
+          if (req_len != 0U && req[0] != kProbeCommand)
+          {
+            static_cast<XrDap::DapVendor*>(ctx)->Observe(req, req_len);
+          }
+          return true;
+        }
+        return XrDap::DapVendor::Hook(ctx, req, req_len, resp, resp_cap, out_len);
+      },
+      &vendor);
+  DapSessionApplyConfig();
+#else
+  dap.SetCommandHook(&XrDap::DapVendor::Hook, &vendor);
 #endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, kVendorName, kUsbProductName,
       kSerialPrefix);
-  static LibXR::CH32USBOtgHS usb({{ep0_buffer}, {ep1_dap_out}}, {{ep0_buffer}, {ep1_dap_in}},
-                                 kUsbVid, kUsbPid, kUsbBcd, {&kStrings}, {{&dap, &dfu}},
-                                 {ChipUid(), kChipUidSize});
+  static LibXR::CH32USBOtgHS usb({{ep0_buffer}, {ep1_dap_out}},
+                                 {{ep0_buffer}, {ep1_dap_in}}, kUsbVid, kUsbPid, kUsbBcd,
+                                 {&kStrings}, {{&dap, &dfu}}, {ChipUid(), kChipUidSize});
   usb.Init(false);
   usb.Start(false);
 
@@ -113,15 +192,15 @@ extern "C" void app_main()
   {
     BootGuardFeed();
 #ifdef XRDAP_HAS_RADIO
-    if (GetConfig().role != RoleSetting::LOCAL || GetRadioRole() != RadioRole::LOCAL)
+    // Pairing takes the radio over; the settings then apply again either way.
+    if (PairingPoll()) DapSessionApplyConfig();
+    if (DapSessionRadioInUse())
     {
-      PairingPoll();
-      RadioLinkService();
+      DapSessionService();
       (void)dap.Step(0);
       dfu.Process();
       continue;
     }
-    PairingPoll();
 #endif
     (void)dap.Step(kStepWaitMs);
     dfu.Process();

@@ -19,8 +19,8 @@ inline constexpr char kName[] = "CH32V307-EVT";
 /// bootloader; active low with the internal pull-up.
 inline constexpr BoardPin kBootKey{kPortB, 3};
 
-/// bootloader 中闪烁的指示灯，高电平点亮 / LED blinking in the bootloader, lit when high.
-inline constexpr bool kHasLed = true;
+/// bootloader 中闪烁的指示灯，高电平点亮（evt.cmake 设 XRDAP_HAS_LED）/ LED blinking in
+/// the bootloader, lit when high (evt.cmake sets XRDAP_HAS_LED).
 inline constexpr BoardPin kLed{kPortB, 4};
 
 /// 目标 SWD / Target SWD.

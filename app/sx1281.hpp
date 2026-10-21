@@ -4,164 +4,118 @@
 // SX1281 for the radio link, in one of two modulations chosen at run time: GFSK at
 // 2 Mb/s or FLRC at 1.3 Mb/s; variable-length packets with a 2-byte CRC, on the
 // VG2392S240X0M2 module whose RF switch is driven by TXEN/RXEN. A pair of probes is told
-// apart from other pairs by its identity: frequency, CRC seed and (GFSK) sync word. The
-// owner thread drives it; nothing here runs in an interrupt. References are to the
-// SX1280/SX1281 datasheet DS_SX1280-1 rev 3.3.
+// apart from other pairs by its identity: frequency, CRC seed and (GFSK) sync word.
+// References are to the SX1280/SX1281 datasheet DS_SX1280-1 rev 3.3.
+//
+// The radio receives continuously and stays in FS between transmit and receive
+// (SetAutoFs, 11.6.12). Only RxDone and CrcError reach DIO1 while receiving, so a high
+// DIO1 means a packet; the error byte of GetPacketStatus decides about the CRC (errata
+// 16.3). Continuous receive can stop hearing packets (errata 16.1): Poll() enters
+// receive again after 100 ms without a packet and resets the radio after 2 s.
+//
+// Context: one owner thread (the application's main loop) calls every member; nothing
+// runs in an interrupt. Calls block for at most a few milliseconds (BUSY, TX done).
 //
 // 用于无线链路的 SX1281，调制方式运行时二选一：GFSK 2 Mb/s 或 FLRC 1.3 Mb/s；变长包，
 // 2 字节 CRC；VG2392S240X0M2 模块的射频开关由 TXEN/RXEN 控制。一对探针靠身份（频点、
-// CRC 种子、GFSK 同步字）与其他对区分。只在所有者线程里驱动，不在中断里运行。引用的
-// 章节均指 SX1280/SX1281 数据手册 DS_SX1280-1 rev 3.3。
+// CRC 种子、GFSK 同步字）与其他对区分。引用的章节均指 SX1280/SX1281 数据手册
+// DS_SX1280-1 rev 3.3。
+//
+// 射频连续接收，收发之间停在 FS（SetAutoFs，11.6.12）。接收时只有 RxDone 和 CrcError
+// 接到 DIO1，DIO1 为高即有包；CRC 由 GetPacketStatus 的错误字节判断（勘误 16.3）。连续
+// 接收可能收不到包（勘误 16.1）：Poll() 100 ms 没收到包时重新进入接收，2 s 时复位射频。
+//
+// 上下文：所有成员只由一个所有者线程（应用主循环）调用，不在中断里运行。每次调用最多
+// 阻塞几毫秒（等 BUSY、等发送完成）。
 
 #include <cstdint>
 #include <initializer_list>
 
-// Build switches. Defaults come from A/B runs on a wdap pair (GFSK, 1 m):
-// XRDAP_RADIO_RX_SINGLE    0: single receive with a timeout, entered again after every
-//                          packet and timeout, as errata 16.1 recommends against the
-//                          continuous-receive lock-up; after a packet receive restarts in the
-//                          other half of the buffer before the packet is read (8.2, 8.4), so
-//                          packets shrink to 127 bytes. Measured slower (1 MiB write 72 vs
-//                          85 KiB/s); continuous receive relies on Poll()'s silence recovery.
-// XRDAP_RADIO_CRC_STATUS   1: judge a packet by the error byte of GetPacketStatus (errata
-//                          16.3: RxDone does not filter packets with CRC errors).
-// XRDAP_RADIO_FLRC_SYNC    1: FLRC with the 32-bit sync word. Without it the receiver takes
-//                          noise for packets and the link stops (27,538 CRC errors, no
-//                          command through). Errata 16.4 lists forbidden sync words for
-//                          coding rates 1/2 and 3/4 ("XRDP" is allowed); for coding rate 1
-//                          they are not published.
-// XRDAP_RADIO_AUTOFS       1: stay in FS after Tx/Rx (11.6.12): 1 MiB write 72 vs 67 KiB/s,
-//                          4-byte reads 2.1 vs 1.6 KiB/s.
-// XRDAP_RADIO_TX_PINGPONG  0: write the next packet into the other half of the buffer
-//                          while the current one is sent (section 8: the buffer is accessible
-//                          in every mode but sleep); limits packets to 127 bytes and measured
-//                          no faster than 255-byte GFSK packets.
-// The round trip of a small command, measured with DAP vendor command 0x9F 0x17 on a wdap
-// pair (GFSK), went from 775 to about 600 us with the next three switches and
-// PrepareTransmit() (4-byte reads 2.4 -> 3.1 KiB/s):
-// XRDAP_RADIO_SPI_DMA_MIN  24: SPI transfers up to this size go byte by byte through the
-//                          data register instead of DMA (9.8 -> 6.4 us per transfer).
-// XRDAP_RADIO_RAMP         0x60: PA ramp time code of SetTxParams (table 11-49), 8 us
-//                          instead of 20 us (0xE0); 4 us saved 35 us per transmit.
-// XRDAP_RADIO_IRQ_FROM_PIN 1: in continuous receive only RxDone and CrcError reach DIO1,
-//                          so a high DIO1 means a packet and GetIrqStatus is skipped (the
-//                          packet status byte still decides about the CRC, errata 16.3).
-#ifndef XRDAP_RADIO_SPI_DMA_MIN
-#define XRDAP_RADIO_SPI_DMA_MIN 24
-#endif
-#ifndef XRDAP_RADIO_RAMP
-#define XRDAP_RADIO_RAMP 0x60
-#endif
-#ifndef XRDAP_RADIO_IRQ_FROM_PIN
-#define XRDAP_RADIO_IRQ_FROM_PIN 1
-#endif
-#ifndef XRDAP_RADIO_RX_SINGLE
-#define XRDAP_RADIO_RX_SINGLE 0
-#endif
-#ifndef XRDAP_RADIO_CRC_STATUS
-#define XRDAP_RADIO_CRC_STATUS 1
-#endif
-#ifndef XRDAP_RADIO_FLRC_SYNC
-#define XRDAP_RADIO_FLRC_SYNC 1
-#endif
-#ifndef XRDAP_RADIO_AUTOFS
-#define XRDAP_RADIO_AUTOFS 1
-#endif
-#ifndef XRDAP_RADIO_TX_PINGPONG
-#define XRDAP_RADIO_TX_PINGPONG 0
-#endif
+#include "pair_identity.hpp"
 
 namespace XrDap
 {
 class Sx1281
 {
  public:
-  static constexpr bool kTxPingPong = XRDAP_RADIO_TX_PINGPONG != 0;
-  static constexpr bool kRxSingle = XRDAP_RADIO_RX_SINGLE != 0;
-  /// Largest packet in either modulation; packets fit half of the 256-byte buffer when
-  /// either side alternates halves / 两种调制中最大的包长。
-  static constexpr uint8_t kMaxPayload = (kTxPingPong || kRxSingle) ? 127 : 255;
+  /// 两种调制中最大的包长 / Largest packet in either modulation.
+  static constexpr uint8_t kMaxPayload = 255;
 
-  /// What tells one pair of probes from another / 区分不同探针对的参数。
-  struct Identity
-  {
-    uint32_t frequency_hz;
-    uint16_t crc_seed;
-    uint8_t sync_word[4];  ///< GFSK only; FLRC keeps "XRDP" (errata 16.4)
-  };
-  /// The identity of unpaired probes: 2.44 GHz, "XRDP", the reset CRC seed 0xFFFF.
-  static Identity DefaultIdentity();
+  /// 一对探针的射频身份（pair_identity.hpp）/ Radio identity of a pair
+  /// (pair_identity.hpp).
+  using Identity = RadioIdentity;
 
-  /// Fills packet `index` of a burst into `out` and returns its size / 填第 index 包。
+  /// 填第 index 包并返回其长度 / Fills packet `index` of a burst into `out` and returns
+  /// its size.
   using Fill = uint8_t (*)(void* ctx, uint8_t index, uint8_t* out);
 
-  /// Pins and SPI; the radio stays in reset until Start() / 引脚和 SPI，Start() 前保持复位。
+  /// @brief 配置引脚和 SPI；Start() 之前射频保持复位 / Pins and SPI; the radio stays in
+  ///        reset until Start().
+  /// @note 启动时调用一次 / Call once at start-up.
   void Init();
 
-  /// Modulation and identity for the next Start() / 下次 Start() 用的调制方式和身份。
+  /// @brief 下次 Start() 用的调制方式和身份 / Modulation and identity for the next
+  ///        Start().
   void Configure(bool gfsk, const Identity& identity);
-  /// Reset and configure the radio; ends in receive / 复位并配置射频，结束时处于接收。
-  bool Start();
-  /// Largest packet in the current modulation / 当前调制下的最大包长。
-  uint8_t MaxPayload() const { return gfsk_ ? kMaxPayload : 127; }
-  bool Gfsk() const { return gfsk_; }
 
-  /// Leave receive for transmit ahead of time, so that the switch overlaps other work;
-  /// a Poll() before the transmit listens again / 提前离开接收、准备发射，让切换与
-  /// 其他工作重叠；发射前调用 Poll() 则重新进入接收。
+  /// @brief 复位并配置射频，结束时处于接收 / Reset and configure the radio; ends in
+  ///        receive.
+  /// @return 所有配置命令都被接受时为 true；false 时射频状态不确定，Poll() 在 2 s 无包后
+  ///         会再次复位 / true when every configuration command was accepted; on false
+  ///         the radio state is undefined and Poll() resets it again after 2 s without a
+  ///         packet.
+  /// @note 阻塞约 22 ms（复位脉冲和启动）/ Blocks about 22 ms (reset pulse and start-up).
+  bool Start();
+
+  /// 当前调制下的最大包长 / Largest packet in the current modulation.
+  uint8_t MaxPayload() const { return gfsk_ ? kMaxPayload : 127; }
+
+  /// @brief 提前离开接收、准备发射，让切换与其他工作重叠；发射前调用 Poll() 则重新进入
+  ///        接收 / Leave receive for transmit ahead of time, so that the switch overlaps
+  ///        other work; a Poll() before the transmit listens again.
   void PrepareTransmit();
-  /// Send one packet and return to receive / 发一包后回到接收。
+
+  /// @brief 发一包后回到接收 / Send one packet and return to receive.
+  /// @return 包发出（TxDone）时为 true；长度无效或 5 ms 内没有 TxDone 时为 false /
+  ///         true once the packet went out (TxDone); false for an invalid size or no
+  ///         TxDone within 5 ms.
   bool Transmit(const uint8_t* data, uint8_t size);
-  /// Send `count` packets back to back, then return to receive / 连发多包后回到接收。
+
+  /// @brief 连发 count 包后回到接收 / Send `count` packets back to back, then return to
+  ///        receive.
+  /// @return 每一包都发出时为 true / true when every packet went out.
   bool TransmitBurst(uint8_t count, Fill fill, void* ctx);
 
-  /// A received packet: its size, 0 when none arrived, -1 for a bad packet / 收到一包时
-  /// 返回长度，没有包时 0，坏包时 -1。
-  ///
-  /// When the radio reports nothing at all for a while (no packet and, in single
-  /// receive, no timeout either) Poll() enters receive again, and resets the radio if
-  /// that does not help.
-  /// 射频一段时间什么也不报告（没有包，单次接收时也没有超时）时，Poll() 重新进入接收；
-  /// 仍无反应则复位射频。
+  /// @brief 取一个收到的包 / Fetch one received packet.
+  /// @param data 至少 kMaxPayload 字节 / At least kMaxPayload bytes.
+  /// @return 包长；没有包时 0；坏包（CRC、长度）时 -1 / The packet size; 0 when none
+  ///         arrived; -1 for a bad packet (CRC, length).
+  /// @note 除读包的一次 SPI 外不阻塞；顺带执行静默恢复（见文件头）/ Does not block apart
+  ///       from reading the packet over SPI; also runs the silence recovery (see the file
+  ///       header).
   int Poll(uint8_t* data);
 
-  /// One NSS-framed transfer after BUSY is low / BUSY 变低后一次 NSS 包围的传输。
-  bool Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size);
-
-  /// BUSY, DIO1, DIO2, DIO3 as bits 0..3 / BUSY、DIO1、DIO2、DIO3 分别为位 0..3。
-  uint8_t Pins();
-  /// bit0 NRESET, bit1 TXEN, bit2 RXEN.
-  void SetOutputs(uint8_t mask, uint8_t value);
-  /// Microseconds until DIO1 went high, or false on timeout / DIO1 变高前的微秒数。
-  bool WaitDio1(uint32_t timeout_us, uint32_t& waited_us);
-
-  uint32_t tx_packets = 0, rx_packets = 0, crc_errors = 0, tx_timeouts = 0;
-  /// Receive re-entries after silence or an Rx timeout, radio resets after silence /
-  /// 静默或接收超时后重新进入接收的次数，静默后复位射频的次数。
-  uint32_t rearms = 0, restarts = 0;
-  /// Timing: SPI transfers, the time spent in them and waiting for BUSY before them,
-  /// time waiting for TX done /
-  /// 计时：SPI 传输次数、耗时与之前等 BUSY 的时间，等待发送完成的时间。
-  uint32_t spi_transfers = 0, spi_us = 0, busy_us = 0, tx_wait_us = 0;
-
  private:
+  /// BUSY 变低后一次 NSS 包围的传输 / One NSS-framed transfer after BUSY is low.
+  bool Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size);
   bool Command(std::initializer_list<uint8_t> bytes);
   void Receive();
   void ClearIrq();
   void Recover();
   bool WriteSyncWord();
-  uint8_t Load(Fill fill, void* ctx, uint8_t index, uint8_t base);
-  bool PacketBad(uint16_t irq_flags);
+  uint8_t Load(Fill fill, void* ctx, uint8_t index);
+  bool PacketBad();
   void SetPacketParams(uint8_t size);
 
   bool prepared_ = false;
   bool gfsk_ = true;
   Identity identity_ = DefaultIdentity();
 
-  uint8_t rx_base_ = 0;      // half the next received packet lands in (single receive)
-  uint32_t heard_us_ = 0;    // last report from the radio (packet or timeout), or start
+  uint32_t heard_us_ = 0;    // last packet from the radio, or start
   uint32_t rearmed_us_ = 0;  // last time receive was entered
 };
 
+/// @brief 本板唯一的 SX1281 / The board's SX1281.
+/// @note 只由主循环线程使用 / Used by the main loop thread only.
 Sx1281& Radio();
 }  // namespace XrDap

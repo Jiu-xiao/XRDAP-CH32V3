@@ -23,17 +23,7 @@
 // #define SYSCLK_FREQ_72MHz_HSE  72000000
 // #define SYSCLK_FREQ_96MHz_HSE  96000000
 // #define SYSCLK_FREQ_120MHz_HSE  120000000
-/* XR-DAP: the application runs at XRDAP_APP_SYSCLK_HZ from the board file, 144 MHz or
-   216 MHz (12 MHz crystal x18, above the 144 MHz rating; verified on a wdap board); the
-   bootloader passes XRDAP_SYSCLK_96MHZ because the flash driver needs SYSCLK <= 120 MHz.
-   All keep HSE running, which the USBHS PHY PLL uses as its reference. */
-#if defined(XRDAP_SYSCLK_96MHZ)
-#define SYSCLK_FREQ_96MHz_HSE 96000000
-#elif XRDAP_APP_SYSCLK_HZ == 216000000
-#define SYSCLK_FREQ_216MHz_HSE 216000000
-#else
-#define SYSCLK_FREQ_144MHz_HSE 144000000
-#endif
+// #define SYSCLK_FREQ_144MHz_HSE  144000000
 // #define SYSCLK_FREQ_HSI    HSI_VALUE
 // #define SYSCLK_FREQ_48MHz_HSI  48000000
 // #define SYSCLK_FREQ_56MHz_HSI  56000000
@@ -63,9 +53,6 @@ uint32_t SystemCoreClock =
 #elif defined SYSCLK_FREQ_144MHz_HSE
 uint32_t SystemCoreClock =
     SYSCLK_FREQ_144MHz_HSE; /* System Clock Frequency (Core Clock) */
-#elif defined SYSCLK_FREQ_216MHz_HSE
-uint32_t SystemCoreClock =
-    SYSCLK_FREQ_216MHz_HSE; /* System Clock Frequency (Core Clock) */
 #elif defined SYSCLK_FREQ_48MHz_HSI
 uint32_t SystemCoreClock =
     SYSCLK_FREQ_48MHz_HSI; /* System Clock Frequency (Core Clock) */
@@ -106,7 +93,7 @@ static void SetSysClockTo72_HSE(void);
 static void SetSysClockTo96_HSE(void);
 #elif defined SYSCLK_FREQ_120MHz_HSE
 static void SetSysClockTo120_HSE(void);
-#elif defined SYSCLK_FREQ_144MHz_HSE || defined SYSCLK_FREQ_216MHz_HSE
+#elif defined SYSCLK_FREQ_144MHz_HSE
 static void SetSysClockTo144_HSE(void);
 #elif defined SYSCLK_FREQ_48MHz_HSI
 static void SetSysClockTo48_HSI(void);
@@ -250,7 +237,7 @@ static void SetSysClock(void)
   SetSysClockTo96_HSE();
 #elif defined SYSCLK_FREQ_120MHz_HSE
   SetSysClockTo120_HSE();
-#elif defined SYSCLK_FREQ_144MHz_HSE || defined SYSCLK_FREQ_216MHz_HSE
+#elif defined SYSCLK_FREQ_144MHz_HSE
   SetSysClockTo144_HSE();
 #elif defined SYSCLK_FREQ_48MHz_HSI
   SetSysClockTo48_HSI();
@@ -593,13 +580,7 @@ static void SetSysClockTo96_HSE(void)
     /*  PLL configuration: PLLCLK = HSE * 12 = 96 MHz */
     RCC->CFGR0 &= (uint32_t)((uint32_t)~(RCC_PLLSRC | RCC_PLLXTPRE | RCC_PLLMULL));
 
-#if HSE_VALUE == 8000000
     RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSE | RCC_PLLXTPRE_HSE | RCC_PLLMULL12_EXTEN);
-#elif HSE_VALUE == 12000000
-    RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSE | RCC_PLLXTPRE_HSE | RCC_PLLMULL8_EXTEN);
-#else
-#error "96 MHz from HSE needs an 8 MHz or 12 MHz crystal"
-#endif
 
     /* Enable PLL */
     RCC->CTLR |= RCC_PLLON;
@@ -697,7 +678,7 @@ static void SetSysClockTo120_HSE(void)
   }
 }
 
-#elif defined SYSCLK_FREQ_144MHz_HSE || defined SYSCLK_FREQ_216MHz_HSE
+#elif defined SYSCLK_FREQ_144MHz_HSE
 
 /*********************************************************************
  * @fn      SetSysClockTo144_HSE
@@ -738,23 +719,10 @@ static void SetSysClockTo144_HSE(void)
     /* PCLK1 = HCLK */
     RCC->CFGR0 |= (uint32_t)RCC_PPRE1_DIV2;
 
-    /*  PLL configuration: PLLCLK = HSE * 18 (8 MHz) or HSE * 12 (12 MHz) = 144 MHz.
-        XR-DAP: the multiplier follows the board's HSE_VALUE instead of assuming 8 MHz. */
+    /*  PLL configuration: PLLCLK = HSE * 18 = 144 MHz */
     RCC->CFGR0 &= (uint32_t)((uint32_t)~(RCC_PLLSRC | RCC_PLLXTPRE | RCC_PLLMULL));
 
-#if defined SYSCLK_FREQ_216MHz_HSE
-#if HSE_VALUE == 12000000
     RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSE | RCC_PLLXTPRE_HSE | RCC_PLLMULL18_EXTEN);
-#else
-#error "216 MHz from HSE needs a 12 MHz crystal (x18 is the largest multiplier)"
-#endif
-#elif HSE_VALUE == 8000000
-    RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSE | RCC_PLLXTPRE_HSE | RCC_PLLMULL18_EXTEN);
-#elif HSE_VALUE == 12000000
-    RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSE | RCC_PLLXTPRE_HSE | RCC_PLLMULL12_EXTEN);
-#else
-#error "144 MHz from HSE needs an 8 MHz or 12 MHz crystal"
-#endif
 
     /* Enable PLL */
     RCC->CTLR |= RCC_PLLON;

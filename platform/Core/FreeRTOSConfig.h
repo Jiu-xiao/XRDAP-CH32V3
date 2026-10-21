@@ -97,7 +97,7 @@
 #define configTICK_RATE_HZ				( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES			( 10 )
 #define configMINIMAL_STACK_SIZE		( ( unsigned short ) 384 ) /* Can be as low as 60 but some of the demo tasks that use this constant require it to be higher. */
-#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 38 * 1024 ) ) /* 13 KB were still free at 42 KB (wdap) */
+#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 34 * 1024 ) ) /* app 6 KB, sampler 3 KB, lights 1 KB stacks and the LibXR objects; about 2.5 KB stay free on wdap */
 #define configMAX_TASK_NAME_LEN			( 16 )
 #define configUSE_TRACE_FACILITY		1
 #define configUSE_16_BIT_TICKS			0

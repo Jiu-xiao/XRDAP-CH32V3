@@ -2,8 +2,9 @@
 # toolchain, CPU flags, board selection, the WCH peripheral library and the image
 # helpers. Each project includes this file before project().
 #
-# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, bootloader
-# key and LED) and boards/<name>.hpp (pins used by the firmware).
+# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, core clock and
+# which parts the board has: XRDAP_HAS_LED, XRDAP_HAS_RADIO, XRDAP_HAS_STATUS_LIGHTS) and
+# boards/<name>.hpp (pins used by the firmware).
 
 if(NOT DEFINED XRDAP_ROOT)
   get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -34,6 +35,7 @@ if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()
 include("${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+# Application core clock (common/sysclk.h); the bootloader runs at 96 MHz.
 if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
   set(XRDAP_APP_SYSCLK_HZ 144000000)
 endif()
@@ -90,6 +92,9 @@ set(XRDAP_COMMON_DEFINES
     XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
     XRDAP_CONFIG_SIZE=${XRDAP_CONFIG_SIZE}
     XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
+if(XRDAP_HAS_LED)
+  list(APPEND XRDAP_COMMON_DEFINES XRDAP_HAS_LED)
+endif()
 
 set(XRDAP_PLATFORM_INCLUDES
     "${XRDAP_PLATFORM_DIR}/Core"

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "FreeRTOS.h"
 #include "ch32v30x.h"
+#include "sysclk.h"
 #include "task.h"
 
 void app_main(void);
@@ -16,9 +17,10 @@ int main(void)
 {
   NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
   SystemInit();
+  (void)XrDapSysClockInit();
   SystemCoreClockUpdate();
   __enable_irq();
-  xTaskCreate(AppTask, "app", 2048, NULL, 3, NULL);  // 8 KB; about 1 KB is used
+  xTaskCreate(AppTask, "app", 1536, NULL, 3, NULL);  // 6 KB stack
   vTaskStartScheduler();
   for (;;)
   {

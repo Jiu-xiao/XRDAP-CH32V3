@@ -20,8 +20,11 @@ inline constexpr char kName[] = "XR-DAP-WDAP";
 /// pull-up.
 inline constexpr BoardPin kBootKey{kPortC, 10};
 
-inline constexpr bool kHasLed = false;
-inline constexpr BoardPin kLed{kPortC, 0};
+/// LED2..LED9：8 颗 WS2812B-2020 串成一链，DIN 接 PB15（TIM1_CH3N；wdap.cmake 设
+/// XRDAP_HAS_STATUS_LIGHTS）/ LED2..LED9: a chain of 8 WS2812B-2020, DIN on PB15
+/// (TIM1_CH3N; wdap.cmake sets XRDAP_HAS_STATUS_LIGHTS).
+inline constexpr uint8_t kStatusLightCount = 8;
+inline constexpr BoardPin kStatusLights{kPortB, 15};
 
 /// P2-3 TCK_O：SWD 时为 SWCLK / P2-3 TCK_O, SWCLK in SWD mode.
 inline constexpr BoardPin kSwclk{kPortB, 3};
@@ -29,9 +32,6 @@ inline constexpr BoardPin kSwclk{kPortB, 3};
 inline constexpr BoardPin kSwdio{kPortB, 5};
 /// P2-5 RST_O / P2-5 RST_O.
 inline constexpr BoardPin kNreset{kPortC, 1};
-/// P2-6 TDI_O、P2-11 TDO_O / P2-6 TDI_O, P2-11 TDO_O.
-inline constexpr BoardPin kTdi{kPortC, 2};
-inline constexpr BoardPin kTdo{kPortC, 3};
 
 /// VG2392S240X0M2 (SX1281) on SPI1 / VG2392S240X0M2（SX1281）接 SPI1.
 inline constexpr BoardPin kRadioSck{kPortA, 5};
@@ -41,9 +41,6 @@ inline constexpr BoardPin kRadioNss{kPortC, 4};
 inline constexpr BoardPin kRadioNreset{kPortC, 5};
 inline constexpr BoardPin kRadioBusy{kPortB, 0};
 inline constexpr BoardPin kRadioDio1{kPortB, 1};
-/// DIO2 shares PB2 with BOOT1 (R6) / DIO2 与 BOOT1 共用 PB2（R6）.
-inline constexpr BoardPin kRadioDio2{kPortB, 2};
-inline constexpr BoardPin kRadioDio3{kPortB, 10};
 /// Module RF switch: TXEN high to transmit, RXEN high to receive / 模块射频开关.
 inline constexpr BoardPin kRadioTxEn{kPortB, 11};
 inline constexpr BoardPin kRadioRxEn{kPortB, 12};

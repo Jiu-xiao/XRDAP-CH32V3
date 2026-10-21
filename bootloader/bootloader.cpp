@@ -18,24 +18,27 @@
 #include <cstdint>
 
 #include XRDAP_BOARD_HEADER
-#include "boot_mailbox.h"
 #include "ch32_flash.hpp"
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
 #include "ch32v30x.h"
+#include "chip_uid.h"
 #include "dfu/dfu_bootloader.hpp"
+#include "flash_layout.hpp"
 #include "libxr.hpp"
+#include "probe_identity.hpp"
+#include "reserved_ram.h"
 #include "thread.hpp"
 
 namespace
 {
 namespace Board = XrDap::Board;
+namespace Layout = XrDap::Layout;
 
-constexpr uint32_t kFlashBase = 0x08000000U;  // flash as seen by the flash controller
+constexpr uint32_t kFlashBase = Layout::kFlashBase;
 constexpr uint32_t kPageSize = LibXR::CH32Flash::PageSize();
-constexpr uint32_t kAppBase = XRDAP_APP_BASE;  // CPU address of the application
-constexpr uint32_t kAppSize = XRDAP_APP_SIZE;
-constexpr uint32_t kSealOffset = kAppSize - XRDAP_SEAL_SIZE;
+constexpr uint32_t kAppBase = Layout::kAppBase;  // CPU address of the application
+constexpr uint32_t kAppSize = Layout::kAppSize;
 constexpr uint32_t kLedPeriodMs = 250U;
 
 static_assert(kAppBase % kPageSize == 0U && kAppSize % kPageSize == 0U,
@@ -45,6 +48,48 @@ static_assert(kAppBase % kPageSize == 0U && kAppSize % kPageSize == 0U,
 // area is the application window at its end.
 constexpr LibXR::FlashRegion kFlashRegions[] = {
     {kFlashBase, kPageSize, (kAppBase + kAppSize) / kPageSize}};
+
+// The application window minus the settings: erases and writes that would touch the
+// settings fail, so a DFU download larger than the image area is refused (the DFU
+// state machine reports the error) instead of overwriting the settings.
+class AppWindowFlash : public LibXR::Flash
+{
+ public:
+  explicit AppWindowFlash(LibXR::Flash& flash)
+      : LibXR::Flash(flash.MinEraseSize(), flash.MinWriteSize(),
+                     {reinterpret_cast<void*>(kFlashBase + kAppBase), kAppSize}),
+        flash_(flash)
+  {
+  }
+
+  LibXR::ErrorCode Erase(size_t offset, size_t size) override
+  {
+    if (Layout::OverlapsConfig(static_cast<uint32_t>(offset),
+                               static_cast<uint32_t>(size)))
+    {
+      return LibXR::ErrorCode::OUT_OF_RANGE;
+    }
+    return flash_.Erase(offset, size);
+  }
+
+  LibXR::ErrorCode Write(size_t offset, LibXR::ConstRawData data) override
+  {
+    if (Layout::OverlapsConfig(static_cast<uint32_t>(offset),
+                               static_cast<uint32_t>(data.size_)))
+    {
+      return LibXR::ErrorCode::OUT_OF_RANGE;
+    }
+    return flash_.Write(offset, data);
+  }
+
+  LibXR::ErrorCode Read(size_t offset, LibXR::RawData data) override
+  {
+    return flash_.Read(offset, data);
+  }
+
+ private:
+  LibXR::Flash& flash_;
+};
 
 alignas(64) uint8_t ep0_buffer[64];
 
@@ -76,7 +121,8 @@ bool BootKeyHeld()
 {
   ConfigurePin(Board::kBootKey, GPIO_Mode_IPU);
   LibXR::Timebase::DelayMicroseconds(100);  // let the pull-up settle
-  return GPIO_ReadInputDataBit(Board::kBootKey.Port(), Board::kBootKey.Mask()) == Bit_RESET;
+  return GPIO_ReadInputDataBit(Board::kBootKey.Port(), Board::kBootKey.Mask()) ==
+         Bit_RESET;
 }
 
 // The CH32 startup code puts `j handle_reset` at the image base and the vector table
@@ -116,11 +162,12 @@ void JumpToAppThunk(void*) { JumpToApp(); }
 
 void BlinkLed(uint32_t now_ms)
 {
-  if constexpr (Board::kHasLed)
-  {
-    const bool on = ((now_ms / kLedPeriodMs) & 1U) != 0U;
-    GPIO_WriteBit(Board::kLed.Port(), Board::kLed.Mask(), on ? Bit_SET : Bit_RESET);
-  }
+#ifdef XRDAP_HAS_LED
+  const bool on = ((now_ms / kLedPeriodMs) & 1U) != 0U;
+  GPIO_WriteBit(Board::kLed.Port(), Board::kLed.Mask(), on ? Bit_SET : Bit_RESET);
+#else
+  (void)now_ms;
+#endif
 }
 }  // namespace
 
@@ -130,7 +177,9 @@ extern "C" void bootloader_main()
   LibXR::PlatformInit();
 
   static LibXR::CH32Flash flash(kFlashRegions, 1, kFlashBase + kAppBase);
-  static LibXR::USB::DfuBootloaderClass dfu(flash, 0U, kAppSize, kSealOffset, JumpToAppThunk);
+  static AppWindowFlash app_window(flash);
+  static LibXR::USB::DfuBootloaderClass dfu(app_window, 0U, kAppSize, Layout::kSealOffset,
+                                            JumpToAppThunk);
 
   const bool requested = ConsumeBootRequest();
   if (!requested && !BootKeyHeld() && AppVectorsPlausible() && dfu.HasValidImage())
@@ -138,17 +187,16 @@ extern "C" void bootloader_main()
     JumpToApp();
   }
 
-  if constexpr (Board::kHasLed)
-  {
-    ConfigurePin(Board::kLed, GPIO_Mode_Out_PP);
-  }
+#ifdef XRDAP_HAS_LED
+  ConfigurePin(Board::kLed, GPIO_Mode_Out_PP);
+#endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
-      LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "XR-DAP-V307 DFU",
-      "XRobot-XRDAP-");
-  static LibXR::CH32USBOtgHS usb({{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid, 0x0100,
-                                 {&kStrings}, {{&dfu}},
-                                 {reinterpret_cast<void*>(0x1FFFF7E8), 12});
+      LibXR::USB::DescriptorStrings::Language::EN_US, XrDap::kVendorName,
+      "XR-DAP-V307 DFU", XrDap::kSerialPrefix);
+  static LibXR::CH32USBOtgHS usb(
+      {{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid, 0x0100, {&kStrings}, {{&dfu}},
+      {reinterpret_cast<void*>(XRDAP_CHIP_UID_ADDR), XRDAP_CHIP_UID_SIZE});
   usb.Init(false);
   usb.Start(false);
 

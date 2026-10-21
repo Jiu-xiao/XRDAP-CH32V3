@@ -21,18 +21,13 @@ constexpr uint8_t kSetStandby = 0x80, kSetFs = 0xC1, kSetTx = 0x83, kSetRx = 0x8
 constexpr uint8_t kSetAutoFs = 0x9E;
 constexpr uint8_t kSetPacketType = 0x8A, kSetRfFrequency = 0x86, kSetBufferBase = 0x8F;
 constexpr uint8_t kSetModulation = 0x8B, kSetPacketParams = 0x8C, kSetTxParams = 0x8E;
-constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97, kGetIrq = 0x15;
+constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97;
 constexpr uint8_t kGetRxBufferStatus = 0x17, kGetPacketStatus = 0x1D;
 constexpr uint8_t kWriteBuffer = 0x1A, kReadBuffer = 0x1B, kWriteRegister = 0x18;
 constexpr uint8_t kStandbyXosc = 0x01;
 
-constexpr bool kRxSingle = Sx1281::kRxSingle;
-constexpr bool kCrcFromStatus = XRDAP_RADIO_CRC_STATUS != 0;
-constexpr bool kAutoFs = XRDAP_RADIO_AUTOFS != 0;
-constexpr bool kIrqFromPin = XRDAP_RADIO_IRQ_FROM_PIN != 0;
-
-// Packet parameters (14.1.1 GFSK, 14.3.1 FLRC): 16-bit preamble, the minimum for these bit
-// rates; variable length; 2-byte CRC.
+// Packet parameters (14.1.1 GFSK, 14.3.1 FLRC): 16-bit preamble, the minimum for these
+// bit rates; variable length; 2-byte CRC.
 constexpr uint8_t kPreamble = 0x30, kVariableLength = 0x20;
 struct ModemParams
 {
@@ -44,44 +39,36 @@ struct ModemParams
 // GFSK 2 Mb/s, 2.4 MHz bandwidth, modulation index 0.5, BT 0.5 (tables 14-1..14-3);
 // 4-byte sync word 1 (0x09CF..0x09D2 of SyncWord1 at 0x09CE), whitening on.
 constexpr ModemParams kGfsk{0x00, {0x04, 0x01, 0x20}, 0x06, 0x10, 0x20, 0x00, true};
-// FLRC 1.3 Mb/s, 1.2 MHz bandwidth, BT 1.0 (tables 14-31..14-33), coding rate from
-// -DXRDAP_RADIO_CODING_RATE; whitening off (table 14-41); 32-bit sync word 1 at 0x09CF
-// (see XRDAP_RADIO_FLRC_SYNC for errata 16.4).
-constexpr bool kFlrcSync = XRDAP_RADIO_FLRC_SYNC != 0;
-constexpr ModemParams kFlrc{0x03,
-                            {0x45, XRDAP_RADIO_CODING_RATE, 0x10},
-                            kFlrcSync ? uint8_t{0x04} : uint8_t{0x00},
-                            kFlrcSync ? uint8_t{0x10} : uint8_t{0x00},
-                            0x10,
-                            0x08,
-                            kFlrcSync};
+// FLRC 1.3 Mb/s, 1.2 MHz bandwidth, BT 1.0 (tables 14-31..14-33), coding rate 1 (no FEC,
+// 0x04); whitening off (table 14-41); 32-bit sync word 1 at 0x09CF. Without the sync word
+// the receiver takes noise for packets. Errata 16.4 lists the sync words to avoid at
+// coding rates 1/2 and 3/4 ("XRDP" is allowed); for coding rate 1 none are published.
+constexpr ModemParams kFlrc{0x03, {0x45, 0x04, 0x10}, 0x04, 0x10, 0x10, 0x08, true};
 constexpr uint8_t kFlrcSyncWord[4] = {'X', 'R', 'D', 'P'};
 // CRC seed (tables 14-12 and 14-40, reset value 0xFFFF).
 constexpr uint16_t kCrcSeedReg = 0x09C8;
 
-// IRQ bits (table 11-73), all on DIO1.
+// IRQ bits (table 11-73), all on DIO1: TxDone while transmitting, RxDone and CrcError
+// while receiving.
 constexpr uint16_t kIrqTxDone = 0x0001, kIrqRxDone = 0x0002, kIrqCrcError = 0x0040;
-constexpr uint16_t kIrqTimeout = 0x4000;
-constexpr uint16_t kIrqMask = kIrqTxDone | kIrqRxDone | kIrqCrcError | kIrqTimeout;
+constexpr uint16_t kIrqMask = kIrqTxDone | kIrqRxDone | kIrqCrcError;
 // Error byte of GetPacketStatus (table 11-68): LengthError, CrcError, AbortError.
 constexpr uint8_t kPacketErrors = 0x20 | 0x10 | 0x08;
 
-// Transmit packets start at 0x00, or alternate with 0x80 with ping-pong. Received packets
-// start at rx_base_: single receive restarts the pointer at rxBaseAddress (8.2), so after
-// each packet receive restarts in the other half while that packet is read out.
-constexpr uint8_t kTxBase = 0x00, kHalf = 0x80;
-// Single receive times out after kRxTimeoutMs (1 ms steps, table 11-24) and is entered
-// again; the timeout also proves the radio still answers.
-constexpr uint8_t kRxTimeoutMs = 100;
+// Both directions use the whole 256-byte buffer from address 0 (section 8).
+constexpr uint8_t kTxBase = 0x00, kRxBase = 0x00;
 
 constexpr int8_t kPowerDbm = 0;  // the module's PA follows
+// PA ramp time code of SetTxParams (table 11-49): 8 us.
+constexpr uint8_t kRamp = 0x60;
+// SPI transfers up to this size go byte by byte through the data register instead of
+// DMA: shorter for the many small commands.
+constexpr uint16_t kSpiDmaMin = 24;
 constexpr uint32_t kBusyTimeoutUs = 20'000;
 constexpr uint32_t kTxTimeoutUs = 5'000;  // the longest packet takes about 1.3 ms
 constexpr uint16_t kMaxTransfer = 3 + Sx1281::kMaxPayload;
-static_assert(!(Sx1281::kTxPingPong || Sx1281::kRxSingle) || Sx1281::kMaxPayload <= kHalf,
-              "a packet must fit half of the buffer");
-// Silence recovery: enter receive again after kRearmUs without any report (continuous
-// receive only), reset the radio after kRestartUs.
+// Silence recovery: enter receive again after kRearmUs without a packet, reset the radio
+// after kRestartUs.
 constexpr uint32_t kRearmUs = 100'000;
 constexpr uint32_t kRestartUs = 2'000'000;
 
@@ -92,14 +79,21 @@ struct Hardware
 {
   // SPI1 on PA5/PA6/PA7 (APB2 = core clock), mode 0 (9.3): 144 MHz / 8 = 18 MHz, the
   // SX1281's limit; at 216 MHz / 16 = 13.5 MHz.
-  LibXR::CH32SPI spi{CH32_SPI1, {dma_rx, sizeof(dma_rx)}, {dma_tx, sizeof(dma_tx)},
-                     Board::kRadioSck.Port(), Board::kRadioSck.Mask(),
-                     Board::kRadioMiso.Port(), Board::kRadioMiso.Mask(),
-                     Board::kRadioMosi.Port(), Board::kRadioMosi.Mask(),
-                     0, true, true,
+  LibXR::CH32SPI spi{CH32_SPI1,
+                     {dma_rx, sizeof(dma_rx)},
+                     {dma_tx, sizeof(dma_tx)},
+                     Board::kRadioSck.Port(),
+                     Board::kRadioSck.Mask(),
+                     Board::kRadioMiso.Port(),
+                     Board::kRadioMiso.Mask(),
+                     Board::kRadioMosi.Port(),
+                     Board::kRadioMosi.Mask(),
+                     0,
+                     true,
+                     true,
                      XRDAP_APP_SYSCLK_HZ > 144'000'000 ? SPI_BaudRatePrescaler_16
                                                        : SPI_BaudRatePrescaler_8,
-                     XRDAP_RADIO_SPI_DMA_MIN};
+                     kSpiDmaMin};
   LibXR::CH32GPIO nss{Board::kRadioNss.Port(), Board::kRadioNss.Mask()};
   LibXR::CH32GPIO nreset{Board::kRadioNreset.Port(), Board::kRadioNreset.Mask()};
   LibXR::CH32GPIO txen{Board::kRadioTxEn.Port(), Board::kRadioTxEn.Mask()};
@@ -107,10 +101,6 @@ struct Hardware
   LibXR::CH32GPIO busy{Board::kRadioBusy.Port(), Board::kRadioBusy.Mask(),
                        LibXR::GPIO::Direction::INPUT};
   LibXR::CH32GPIO dio1{Board::kRadioDio1.Port(), Board::kRadioDio1.Mask(),
-                       LibXR::GPIO::Direction::INPUT};
-  LibXR::CH32GPIO dio2{Board::kRadioDio2.Port(), Board::kRadioDio2.Mask(),
-                       LibXR::GPIO::Direction::INPUT};
-  LibXR::CH32GPIO dio3{Board::kRadioDio3.Port(), Board::kRadioDio3.Mask(),
                        LibXR::GPIO::Direction::INPUT};
   LibXR::Semaphore done;
 };
@@ -195,10 +185,9 @@ bool Sx1281::Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
   if (size == 0U || size > kMaxTransfer ||
       !WaitLevel(fast_busy, false, kBusyTimeoutUs, waited))
     return false;
-  const uint32_t begin = NowUs();
   bool ok = true;
   fast_nss.Write(false);
-  if (size <= XRDAP_RADIO_SPI_DMA_MIN)
+  if (size <= kSpiDmaMin)
   {
     PolledTransfer(tx, rx, size);
   }
@@ -209,9 +198,6 @@ bool Sx1281::Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
          LibXR::ErrorCode::OK;
   }
   fast_nss.Write(true);
-  ++spi_transfers;
-  spi_us += NowUs() - begin;
-  busy_us += waited;
   return ok;
 }
 
@@ -221,11 +207,6 @@ bool Sx1281::Command(std::initializer_list<uint8_t> bytes)
 }
 
 void Sx1281::ClearIrq() { Command({kClearIrq, 0xFF, 0xFF}); }
-
-Sx1281::Identity Sx1281::DefaultIdentity()
-{
-  return {2'440'000'000U, 0xFFFF, {'X', 'R', 'D', 'P'}};
-}
 
 void Sx1281::Configure(bool gfsk, const Identity& identity)
 {
@@ -238,9 +219,10 @@ bool Sx1281::WriteSyncWord()
   // GFSK: SyncWord1 byte 4 (0x09CE) is 0 and the 4-byte word starts at 0x09CF; FLRC
   // uses 0x09CF..0x09D2 only.
   const uint8_t* word = gfsk_ ? identity_.sync_word : kFlrcSyncWord;
-  const uint8_t gfsk_frame[] = {kWriteRegister, 0x09, 0xCE, 0x00,
+  const uint8_t gfsk_frame[] = {kWriteRegister, 0x09,    0xCE,    0x00,
                                 word[0],        word[1], word[2], word[3]};
-  const uint8_t flrc_frame[] = {kWriteRegister, 0x09, 0xCF, word[0], word[1], word[2], word[3]};
+  const uint8_t flrc_frame[] = {kWriteRegister, 0x09,    0xCF,   word[0],
+                                word[1],        word[2], word[3]};
   return gfsk_ ? Transfer(gfsk_frame, nullptr, sizeof(gfsk_frame))
                : Transfer(flrc_frame, nullptr, sizeof(flrc_frame));
 }
@@ -248,8 +230,8 @@ bool Sx1281::WriteSyncWord()
 void Sx1281::SetPacketParams(uint8_t size)
 {
   const ModemParams& m = gfsk_ ? kGfsk : kFlrc;
-  Command({kSetPacketParams, kPreamble, m.sync_length, m.sync_match, kVariableLength, size,
-           m.crc, m.whitening});
+  Command({kSetPacketParams, kPreamble, m.sync_length, m.sync_match, kVariableLength,
+           size, m.crc, m.whitening});
 }
 
 void Sx1281::Receive()
@@ -257,10 +239,7 @@ void Sx1281::Receive()
   // 11.6.5: IRQs are cleared by the caller before SetRx.
   hw->txen.Write(false);
   hw->rxen.Write(true);
-  if (kRxSingle)
-    Command({kSetRx, 0x02, 0x00, kRxTimeoutMs});  // single, 1 ms steps
-  else
-    Command({kSetRx, 0x00, 0xFF, 0xFF});  // continuous
+  Command({kSetRx, 0x00, 0xFF, 0xFF});  // continuous
   // Silence counts from here: right after a transmit the answer is still on its way.
   rearmed_us_ = NowUs();
 }
@@ -277,33 +256,34 @@ bool Sx1281::Start()
   const ModemParams& m = gfsk_ ? kGfsk : kFlrc;
   const uint32_t step = static_cast<uint32_t>(
       (static_cast<uint64_t>(identity_.frequency_hz) << 18) / 52'000'000ULL);
-  bool ok = Command({kSetStandby, 0x00}) && Command({kSetPacketType, m.packet_type}) &&
-            Command({kSetRfFrequency, static_cast<uint8_t>(step >> 16),
-                     static_cast<uint8_t>(step >> 8), static_cast<uint8_t>(step)}) &&
-            Command({kSetBufferBase, kTxBase, rx_base_}) &&
-            Command({kSetModulation, m.modulation[0], m.modulation[1], m.modulation[2]}) &&
-            Command({kSetPacketParams, kPreamble, m.sync_length, m.sync_match,
-                     kVariableLength, MaxPayload(), m.crc, m.whitening}) &&
-            (!m.sync_used || WriteSyncWord()) &&
-            Command({kWriteRegister, kCrcSeedReg >> 8, kCrcSeedReg & 0xFF,
-                     static_cast<uint8_t>(identity_.crc_seed >> 8),
-                     static_cast<uint8_t>(identity_.crc_seed)}) &&
-            Command({kSetTxParams, static_cast<uint8_t>(kPowerDbm + 18), XRDAP_RADIO_RAMP}) &&
-            Command({kSetDioIrq, kIrqMask >> 8, kIrqMask & 0xFF, kIrqMask >> 8,
-                     kIrqMask & 0xFF, 0, 0, 0, 0}) &&
-            Command({kSetAutoFs, kAutoFs ? uint8_t{0x01} : uint8_t{0x00}});
+  bool ok =
+      Command({kSetStandby, 0x00}) && Command({kSetPacketType, m.packet_type}) &&
+      Command({kSetRfFrequency, static_cast<uint8_t>(step >> 16),
+               static_cast<uint8_t>(step >> 8), static_cast<uint8_t>(step)}) &&
+      Command({kSetBufferBase, kTxBase, kRxBase}) &&
+      Command({kSetModulation, m.modulation[0], m.modulation[1], m.modulation[2]}) &&
+      Command({kSetPacketParams, kPreamble, m.sync_length, m.sync_match, kVariableLength,
+               MaxPayload(), m.crc, m.whitening}) &&
+      (!m.sync_used || WriteSyncWord()) &&
+      Command({kWriteRegister, kCrcSeedReg >> 8, kCrcSeedReg & 0xFF,
+               static_cast<uint8_t>(identity_.crc_seed >> 8),
+               static_cast<uint8_t>(identity_.crc_seed)}) &&
+      Command({kSetTxParams, static_cast<uint8_t>(kPowerDbm + 18), kRamp}) &&
+      Command({kSetDioIrq, kIrqMask >> 8, kIrqMask & 0xFF, kIrqMask >> 8, kIrqMask & 0xFF,
+               0, 0, 0, 0}) &&
+      Command({kSetAutoFs, 0x01});
   ClearIrq();
   Receive();
   heard_us_ = NowUs();
   return ok;
 }
 
-uint8_t Sx1281::Load(Fill fill, void* ctx, uint8_t index, uint8_t base)
+uint8_t Sx1281::Load(Fill fill, void* ctx, uint8_t index)
 {
   static uint8_t frame[2 + kMaxPayload];
   const uint8_t size = fill(ctx, index, frame + 2);
   frame[0] = kWriteBuffer;
-  frame[1] = base;
+  frame[1] = kTxBase;
   Transfer(frame, nullptr, static_cast<uint16_t>(2U + size));
   return size;
 }
@@ -329,11 +309,8 @@ bool Sx1281::Transmit(const uint8_t* data, uint8_t size)
 
 void Sx1281::PrepareTransmit()
 {
-  // Leave receive for FS (with AutoFs, 10.8: FS to Tx 27 us) or STDBY_XOSC.
-  if (kAutoFs)
-    Command({kSetFs});
-  else
-    Command({kSetStandby, kStandbyXosc});
+  // Leave receive for FS (10.8: FS to Tx 27 us).
+  Command({kSetFs});
   ClearIrq();  // 11.6.4: clear IRQs before SetTx
   prepared_ = true;
 }
@@ -345,33 +322,18 @@ bool Sx1281::TransmitBurst(uint8_t count, Fill fill, void* ctx)
   hw->rxen.Write(false);
   hw->txen.Write(true);
 
-  uint8_t base = kTxBase;
-  uint8_t size = Load(fill, ctx, 0, base);
+  uint8_t size = Load(fill, ctx, 0);
   bool all_sent = true;
   for (uint8_t i = 0; i < count; ++i)
   {
-    if (kTxPingPong) Command({kSetBufferBase, base, rx_base_});
     SetPacketParams(size);
     Command({kSetTx, 0x00, 0x00, 0x00});
-    const bool more = i + 1U < count;
-    const uint8_t next_base = kTxPingPong ? static_cast<uint8_t>(base ^ kHalf) : base;
-    uint8_t next_size = 0;
-    // Section 8: the buffer is accessible while the current packet is on the air.
-    if (more && kTxPingPong) next_size = Load(fill, ctx, static_cast<uint8_t>(i + 1U), next_base);
     uint32_t waited = 0;
     const bool sent = WaitLevel(fast_dio1, true, kTxTimeoutUs, waited);
-    tx_wait_us += waited;
     ClearIrq();
-    if (sent)
-      ++tx_packets;
-    else
-      ++tx_timeouts;
     all_sent = all_sent && sent;
-    if (more && !kTxPingPong) next_size = Load(fill, ctx, static_cast<uint8_t>(i + 1U), next_base);
-    base = next_base;
-    size = next_size;
+    if (i + 1U < count) size = Load(fill, ctx, static_cast<uint8_t>(i + 1U));
   }
-  if (kTxPingPong) Command({kSetBufferBase, kTxBase, rx_base_});
   // Receive accepts any length up to the maximum (variable length filters longer ones).
   SetPacketParams(MaxPayload());
   Receive();
@@ -383,22 +345,20 @@ void Sx1281::Recover()
   const uint32_t now = NowUs();
   if (now - heard_us_ >= kRestartUs)
   {
-    ++restarts;
     Start();
   }
-  else if (!kRxSingle && now - rearmed_us_ >= kRearmUs)
+  else if (now - rearmed_us_ >= kRearmUs)
   {
-    ++rearms;
     Command({kSetStandby, kStandbyXosc});
     ClearIrq();
     Receive();
   }
 }
 
-bool Sx1281::PacketBad(uint16_t irq_flags)
+bool Sx1281::PacketBad()
 {
-  if (!kCrcFromStatus) return (irq_flags & kIrqCrcError) != 0U;
-  // Errata 16.3: check the error byte (packetStatus[23:16], table 11-68).
+  // Errata 16.3: RxDone does not filter packets with CRC errors; check the error byte
+  // (packetStatus[23:16], table 11-68).
   uint8_t status[7] = {kGetPacketStatus, 0, 0, 0, 0, 0, 0};
   Transfer(status, status, sizeof(status));
   return (status[4] & kPacketErrors) != 0U;
@@ -419,43 +379,13 @@ int Sx1281::Poll(uint8_t* data)
     return 0;
   }
   heard_us_ = rearmed_us_ = NowUs();
-  uint16_t flags = kIrqRxDone;
-  if (kRxSingle || !kIrqFromPin || !kCrcFromStatus)
-  {
-    uint8_t irq[4] = {kGetIrq, 0, 0, 0};
-    Transfer(irq, irq, sizeof(irq));
-    flags = static_cast<uint16_t>(irq[2] << 8 | irq[3]);
-  }
   ClearIrq();
-  if ((flags & kIrqRxDone) == 0U)
-  {
-    // An Rx timeout (single receive) or a stray flag: listen again.
-    if ((flags & kIrqTimeout) != 0U) ++rearms;
-    if (kRxSingle) Receive();
-    return 0;
-  }
-  if (PacketBad(flags))
-  {
-    ++crc_errors;
-    if (kRxSingle) Receive();
-    return -1;
-  }
+  if (PacketBad()) return -1;
 
   uint8_t status[4] = {kGetRxBufferStatus, 0, 0, 0};
   Transfer(status, status, sizeof(status));
   const uint8_t size = status[2], offset = status[3];
-  if (size == 0U || size > MaxPayload())
-  {
-    if (kRxSingle) Receive();
-    return -1;
-  }
-  if (kRxSingle)
-  {
-    // Receive again at once, into the other half (8.4), then read this packet out.
-    rx_base_ = static_cast<uint8_t>(rx_base_ ^ kHalf);
-    Command({kSetBufferBase, kTxBase, rx_base_});
-    Receive();
-  }
+  if (size == 0U || size > MaxPayload()) return -1;
   static uint8_t frame[3 + kMaxPayload];
   frame[0] = kReadBuffer;
   frame[1] = offset;
@@ -463,25 +393,6 @@ int Sx1281::Poll(uint8_t* data)
   for (uint8_t i = 0; i < size; ++i) frame[3 + i] = 0;
   Transfer(frame, frame, static_cast<uint16_t>(3U + size));
   for (uint8_t i = 0; i < size; ++i) data[i] = frame[3 + i];
-  ++rx_packets;
   return size;
-}
-
-uint8_t Sx1281::Pins()
-{
-  return static_cast<uint8_t>((hw->busy.Read() ? 1U : 0U) | (hw->dio1.Read() ? 2U : 0U) |
-                              (hw->dio2.Read() ? 4U : 0U) | (hw->dio3.Read() ? 8U : 0U));
-}
-
-void Sx1281::SetOutputs(uint8_t mask, uint8_t value)
-{
-  if (mask & 1U) hw->nreset.Write((value & 1U) != 0U);
-  if (mask & 2U) hw->txen.Write((value & 2U) != 0U);
-  if (mask & 4U) hw->rxen.Write((value & 4U) != 0U);
-}
-
-bool Sx1281::WaitDio1(uint32_t timeout_us, uint32_t& waited_us)
-{
-  return WaitLevel(fast_dio1, true, timeout_us, waited_us);
 }
 }  // namespace XrDap

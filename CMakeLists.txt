@@ -4,7 +4,32 @@ cmake_minimum_required(VERSION 3.20)
 # bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap.
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v307.cmake")
 
-project(xrdap_v307 C CXX ASM)
+# Firmware version, reported in DAP_Info: the version below plus the commit it was built
+# from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A build from a copy
+# without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
+project(xrdap_v307 VERSION 0.2.0 LANGUAGES C CXX ASM)
+if(NOT DEFINED XRDAP_GIT_REV)
+  execute_process(COMMAND git rev-parse --short=7 HEAD
+                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                  OUTPUT_VARIABLE XRDAP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET RESULT_VARIABLE _git_result)
+  if(_git_result EQUAL 0)
+    execute_process(COMMAND git status --porcelain --untracked-files=no
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE _git_dirty OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if(_git_dirty)
+      string(APPEND XRDAP_GIT_REV ".dirty")
+    endif()
+  else()
+    set(XRDAP_GIT_REV "")
+  endif()
+endif()
+set(XRDAP_FIRMWARE_VERSION "${PROJECT_VERSION}")
+if(XRDAP_GIT_REV)
+  string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
+endif()
+message(STATUS "XR-DAP firmware version ${XRDAP_FIRMWARE_VERSION}")
 xrdap_setup_flags(O2)
 xrdap_setup_libraries()
 
@@ -29,22 +54,26 @@ add_subdirectory(libxr)
 target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES} ${FREERTOS_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
-add_executable(xrdap.elf app/main.c app/app_main.cpp app/probe_info.cpp app/boot_guard.cpp
-                         app/config.cpp)
-target_include_directories(xrdap.elf PRIVATE app)
+add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
+                         app/settings_log.cpp app/sampler_task.cpp common/sysclk.c)
+target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ})
+# XR vendor extension, status light rule and probe identity from XRDAP-Core.
+include(xrdap-core/xrdap_core.cmake)
+target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
+target_include_directories(xrdap.elf PRIVATE app ${XRDAP_CORE_INCLUDE_DIRS})
+target_compile_definitions(xrdap.elf PRIVATE XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
 if(XRDAP_HAS_RADIO)
   # Role and modulation are settings in flash (app/config.hpp); one image serves both
-  # ends of the link. FLRC coding rate: 0x04 CR 1 (no FEC), 0x02 CR 3/4, 0x00 CR 1/2.
-  set(XRDAP_RADIO_CODING_RATE 0x04 CACHE STRING "FLRC coding rate")
-  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/radio_link.cpp app/radio_command.cpp
-                                   app/pairing.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO
-                                               XRDAP_RADIO_CODING_RATE=${XRDAP_RADIO_CODING_RATE})
-  # Driver switches for experiments (app/sx1281.hpp), comma separated, e.g.
-  # -DXRDAP_RADIO_DEFINES=XRDAP_RADIO_AUTOFS=0,XRDAP_RADIO_SPI_DMA_MIN=24
-  set(XRDAP_RADIO_DEFINES "" CACHE STRING "Extra radio driver defines")
-  string(REPLACE "," ";" _radio_defines "${XRDAP_RADIO_DEFINES}")
-  target_compile_definitions(xrdap.elf PRIVATE ${_radio_defines})
+  # ends of the link.
+  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/link_protocol.cpp app/link_session.cpp
+                                   app/link_transport.cpp app/dap_forwarding.cpp
+                                   app/dap_session.cpp app/pair_identity.cpp
+                                   app/radio_command.cpp app/pairing.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO)
+endif()
+if(XRDAP_HAS_STATUS_LIGHTS)
+  target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LIGHTS)
 endif()
 target_link_libraries(xrdap.elf PRIVATE platform freertos xr)
 # The image stops in front of the settings and the seal.

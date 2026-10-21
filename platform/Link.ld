@@ -4,7 +4,7 @@ ENTRY( _start )
    window with -Wl,--defsym=IMAGE_FLASH_BASE=... and IMAGE_FLASH_LENGTH=...
    (see cmake/ch32v307.cmake). RAM is linked as 64 KB, which every CH32V307
    FLASH/RAM split from 192K+128K to 256K+64K provides; the top
-   RAM_TOP_RESERVED bytes hold the boot mailbox and survive a reset. */
+   RAM_TOP_RESERVED bytes survive a reset; their use is listed in common/reserved_ram.h. */
 
 __stack_size = DEFINED(STACK_SIZE) ? STACK_SIZE : 4096;
 __heap_size = DEFINED(HEAP_SIZE) ? HEAP_SIZE : 8192;

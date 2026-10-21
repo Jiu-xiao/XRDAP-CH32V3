@@ -1,47 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// Probe identity for DAP_Info and USB: serial = prefix + the 12-byte chip UID in
-// upper-case hex, the same string the USB stack builds for the device serial, so host
-// tools see one probe whichever way they reach it.
+// Identity of this probe: product, firmware version and chip UID. The serial rule and the
+// DAP_Info strings come from XRDAP-Core's probe_identity.hpp: prefix + the 12-byte UID
+// in upper-case hex, the same string the USB stack builds for the device serial.
 //
-// 探针身份（DAP_Info 与 USB）：序列号 = 前缀 + 12 字节芯片 UID 的大写十六进制，与 USB
-// 协议栈生成的设备序列号相同，上位机无论经哪条路都认作同一块探针。
+// 本探针的身份：产品名、固件版本和芯片 UID。序列号规则和 DAP_Info 字符串来自
+// XRDAP-Core 的 probe_identity.hpp：前缀 + 12 字节 UID 的大写十六进制，与 USB 协议栈
+// 生成的设备序列号相同。
 
 #include <cstdint>
+
+#include "chip_uid.h"
+#include "probe_identity.hpp"
 
 namespace XrDap
 {
 
-inline constexpr char kFirmwareVersion[] = "0.1.0";
-inline constexpr char kVendorName[] = "XRobot";
+/// 固件版本，由 CMake 给出（工程版本加提交号）/ Firmware version from CMake (project
+/// version plus the commit).
+inline constexpr char kFirmwareVersion[] = XRDAP_FIRMWARE_VERSION;
 inline constexpr char kProductName[] = "XR-DAP-V307";
 inline constexpr char kUsbProductName[] = "XR-DAP-V307 CMSIS-DAP";
-inline constexpr char kSerialPrefix[] = "XRobot-XRDAP-";
 
 /// 芯片 UID 的地址与长度 / Address and length of the chip UID.
-inline const uint8_t* ChipUid() { return reinterpret_cast<const uint8_t*>(0x1FFFF7E8U); }
-inline constexpr uint32_t kChipUidSize = 12;
-
-/// 序列号，例如 XRobot-XRDAP-68E3BE7B54507AAF39E339E3 / Serial, e.g.
-/// XRobot-XRDAP-68E3BE7B54507AAF39E339E3.
-const char* ProbeSerial();
-
-/// @brief 把探针身份写入 DAP_Info / Write the probe identity into DAP_Info.
-template <typename DapT>
-void SetProbeInfo(DapT& dap, const char* board_name)
+inline const uint8_t* ChipUid()
 {
-  dap.SetInfoStrings({
-      kVendorName,       // vendor
-      kProductName,      // product
-      ProbeSerial(),     // serial
-      "2.0.0",           // CMSIS-DAP protocol version
-      nullptr,           // target device vendor (not fixed)
-      nullptr,           // target device name
-      kVendorName,       // board vendor
-      board_name,        // board name
-      kFirmwareVersion,  // probe firmware version
-  });
+  return reinterpret_cast<const uint8_t*>(XRDAP_CHIP_UID_ADDR);
 }
+inline constexpr uint32_t kChipUidSize = XRDAP_CHIP_UID_SIZE;
 
 }  // namespace XrDap
