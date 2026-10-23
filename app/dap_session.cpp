@@ -29,13 +29,13 @@ bool session_local = false;
 uint32_t last_usb_us = 0;
 
 // Host side of the radio session.
-Link::HostSession host;
+constinit Link::HostSession host;  // constant initialised: no startup constructors
 // The last forwarded command got no answer, or the peer has been quiet for kQuietUs:
 // the next command pings first and fails fast when the peer does not answer.
 bool peer_lost = false;
 uint32_t heard_peer_us = 0;
 uint32_t swd_hz = kDefaultSwdHz;  // last SWJ_Clock forwarded
-SettingsReplay replay;
+constinit SettingsReplay replay;
 
 uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds()); }
 

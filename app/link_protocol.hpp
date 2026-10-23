@@ -86,7 +86,8 @@ class Reassembler
   };
 
   /// @param buffer 消息缓冲，capacity 字节 / Message buffer of `capacity` bytes.
-  Reassembler(uint8_t* buffer, uint16_t capacity) : buffer_(buffer), capacity_(capacity)
+  constexpr Reassembler(uint8_t* buffer, uint16_t capacity)
+      : buffer_(buffer), capacity_(capacity)
   {
   }
 

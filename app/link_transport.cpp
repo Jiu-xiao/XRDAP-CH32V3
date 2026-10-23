@@ -33,9 +33,12 @@ uint8_t host_sequence = 0;
 uint8_t command[kMaxMessage];
 uint8_t answer[kMaxMessage];
 uint16_t answer_size = 0;
-Link::Reassembler commands(command, sizeof(command));
-Link::RemoteLease lease;
-Link::AnswerCache cache;
+// The startup code runs no C++ constructors (platform/startup_ch32v30x_D8C.S does not
+// call __libc_init_array): every namespace-scope object here must be constant
+// initialised, which constinit checks.
+constinit Link::Reassembler commands(command, sizeof(command));
+constinit Link::RemoteLease lease;
+constinit Link::AnswerCache cache;
 bool executing = false;
 void (*after_answer)() = nullptr;
 

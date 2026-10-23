@@ -86,7 +86,9 @@ class HostSession
 
   /// @param seed 第一个会话号的来源，例如启动后的微秒数 / Source of the first session id,
   ///        e.g. microseconds since start.
-  explicit HostSession(uint32_t seed = 0) : next_(static_cast<uint16_t>(seed)) {}
+  explicit constexpr HostSession(uint32_t seed = 0) : next_(static_cast<uint16_t>(seed))
+  {
+  }
 
   /// @brief 一条命令要转发（H1）/ A command is about to be forwarded (H1).
   /// @return 新会话开始，应先发 PING(id) 时为 true / true when a new session begins and
