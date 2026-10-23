@@ -11,11 +11,11 @@
 // channel. The same two probes always get the same identity. The identity separates
 // pairs; it does not authenticate them.
 //
-// 一对探针的射频身份。纯逻辑；tests/link_test.cpp 检查它。未配对的探针用默认身份： 2.44
-// GHz、CRC 种子 0xFFFF、GFSK 同步字 "XRDP"。配对（pairing.hpp）让两块探针得到同一个链路
-// id，即两者芯片 UID 的 LinkId()；PairIdentity() 由它推导频点（2403..2479 MHz，GFSK 2.4
-// MHz 带宽不出 2400..2483.5 MHz）、CRC 种子和有 10..22 次跳变的 GFSK 同步字，使其区别于前
-// 导码和空闲信道。同一对探针总得到同一个身份。身份只区分不同的对，不做认证。
+// 一对探针的射频身份。纯逻辑；tests/link_test.cpp 检查它。未配对的探针用默认身份：
+// 2.44 GHz、CRC 种子 0xFFFF、GFSK 同步字 "XRDP"。配对（pairing.hpp）让两块探针得到同一个
+// 链路 id，即两者芯片 UID 的 LinkId()；PairIdentity() 由它推导频点（2403..2479 MHz，
+// GFSK 2.4 MHz 带宽不出 2400..2483.5 MHz）、CRC 种子和有 10..22 次跳变的 GFSK 同步字，
+// 使其区别于前导码和空闲信道。同一对探针总得到同一个身份。身份只区分不同的对，不做认证。
 
 #include <cstddef>
 #include <cstdint>

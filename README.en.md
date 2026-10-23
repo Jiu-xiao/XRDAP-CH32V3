@@ -52,6 +52,8 @@ The SX1281 radio module on the `wdap` board joins two probes into one wireless p
 
 Both boards run the same firmware, and by default the role is decided automatically. A paired probe without a debug session of its own listens to the radio as a remote; when a tool sends DAP_Connect, the probe first pings its paired peer, and if the peer answers the session runs over the radio, otherwise the probe drives its own SWD port. So the board that is only powered is the remote and the board a tool opens is the host; without the remote, the host is an ordinary wired probe. When the peer drops out during a session the commands return errors rather than moving to the local SWD port; the next DAP_Connect decides again. SWJ_Clock, TransferConfigure and SWD_Configure sent before DAP_Connect are sent on to the remote when the session moves to the radio.
 
+One transport owns a probe at a time (the session owner of [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)): while the remote serves a radio session, the radio peer owns it, and commands on the remote's own USB get busy (standard commands `command FF`, vendor commands `command 05`) while DAP_Info is answered as usual; the other way round, a remote held by its local USB answers busy to the radio. When the radio session ends, the sampling it started stops.
+
 ### Pairing
 
 Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send vendor command `0x9F 0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
@@ -96,7 +98,7 @@ The probe supports the XR vendor extension (commands 0x80 to 0x85): reading and 
 
 Over the radio the vendor commands are forwarded to the remote like DAP commands; sampling runs on the remote at its own ticks, the frames collect in the remote's buffer and the host fetches them in batches.
 
-The SWD clock is made in software on GPIO and is not meant to be exact: settings from about 24 MHz up use the no-delay path (about 14 MHz on `wdap`), and slow settings run up to 40 % fast. With SWD set to 25 MHz, wired, N 4-byte variables per frame, the shortest periods without a skipped tick or a dropped frame are typically 73 µs for 1 variable (13.7 kHz), 181 µs for 8 (5.5 kHz) and 670 µs for 32 (1.5 kHz); with many variables the SWD accesses set the period, about 11 µs each.
+The SWD clock is made in software on GPIO: a setting at or above the speed of the no-delay path (about 14 MHz on `wdap`) takes that path, and any other setting takes the delayed step whose period is closest, within half a step of the setting, slightly faster or slightly slower. The steps are calibrated in CPU cycles (`kSwdTiming` in `app/app_main.cpp`). With SWD set to 25 MHz, wired, N 4-byte variables per frame, the shortest periods without a skipped tick or a dropped frame are typically 73 µs for 1 variable (13.7 kHz), 181 µs for 8 (5.5 kHz) and 670 µs for 32 (1.5 kHz); with many variables the SWD accesses set the period, about 11 µs each.
 
 ## 4. Building
 
@@ -165,7 +167,7 @@ The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above
 
 ### libxr version
 
-The `libxr` submodule follows the `feat/xrdap` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data.
+The `libxr` submodule follows the `feat/xrdap-r2-swd-loop` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data.
 
 ## License
 

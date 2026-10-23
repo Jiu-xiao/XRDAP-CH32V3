@@ -3,10 +3,10 @@
 
 #include XRDAP_BOARD_HEADER
 #include "FreeRTOS.h"
-#include "status_light.hpp"
 #include "task.h"
 #include "timebase.hpp"
 #include "ws2812.hpp"
+#include "xrdap/light/status_light.hpp"
 #ifdef XRDAP_HAS_RADIO
 #include "dap_session.hpp"
 #include "pairing.hpp"
@@ -28,7 +28,7 @@ constexpr uint8_t kCometTail = 12;
 
 struct Inputs
 {
-  const DapVendor* vendor;
+  const DapActivity* activity;
   bool (*usb_configured)(void*);
   void* usb_ctx;
 };
@@ -71,8 +71,7 @@ void Task(void*)
     }
 #endif
 
-    const Light::Frame f =
-        rule.Update(link, setting, inputs.vendor->Activity().Read(now), now);
+    const Light::Frame f = rule.Update(link, setting, inputs.activity->Read(now), now);
     const uint32_t level = kPeak * f.level / 1000U;
     const Rgb base{static_cast<uint8_t>(f.color.r * level / 255U),
                    static_cast<uint8_t>(f.color.g * level / 255U),
@@ -98,10 +97,10 @@ void Task(void*)
 }
 }  // namespace
 
-void StatusLightsBegin(uint32_t task_prio, const DapVendor& vendor,
+void StatusLightsBegin(uint32_t task_prio, const DapActivity& activity,
                        bool (*usb_configured)(void*), void* usb_ctx)
 {
-  inputs = {&vendor, usb_configured, usb_ctx};
+  inputs = {&activity, usb_configured, usb_ctx};
   // The pin and the timer are set up here, in the caller's task, so that only the main
   // task writes port configuration registers during start-up.
   Ws2812::Init();

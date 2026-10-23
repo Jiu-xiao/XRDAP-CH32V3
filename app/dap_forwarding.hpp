@@ -19,16 +19,15 @@
 
 #include <cstdint>
 
-#include "daplink_v2_def.hpp"
+#include "xrdap/protocol/dap_ids.hpp"
 
 namespace XrDap
 {
-using DapCommand = LibXR::USB::DapLinkV2Def::CommandId;
-
-/// @brief req[0] 是不是这条 DAP 命令 / Whether req[0] is this DAP command.
-inline bool IsCommand(const uint8_t* req, uint16_t len, DapCommand id)
+/// @brief req[0] 是不是这条 DAP 命令（XRDAP-Core 的 Dap::k* 命令号）/ Whether req[0] is
+///        this DAP command (XRDAP-Core's Dap::k* ids).
+inline bool IsCommand(const uint8_t* req, uint16_t len, uint8_t id)
 {
-  return len != 0U && req[0] == static_cast<uint8_t>(id);
+  return len != 0U && req[0] == id;
 }
 
 /// libxr 在 SWJ_Clock 之前用的 SWD 时钟 / libxr's SWD clock until SWJ_Clock.
@@ -65,8 +64,8 @@ class SettingsReplay
     uint8_t size;
     uint8_t data[8];
   };
-  Item items_[kSettings] = {{static_cast<uint8_t>(DapCommand::SWJ_CLOCK), 0, {}},
-                            {static_cast<uint8_t>(DapCommand::TRANSFER_CONFIGURE), 0, {}},
-                            {static_cast<uint8_t>(DapCommand::SWD_CONFIGURE), 0, {}}};
+  Item items_[kSettings] = {{Dap::kSwjClock, 0, {}},
+                            {Dap::kTransferConfigure, 0, {}},
+                            {Dap::kSwdConfigure, 0, {}}};
 };
 }  // namespace XrDap

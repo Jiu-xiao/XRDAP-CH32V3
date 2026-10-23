@@ -104,14 +104,4 @@ uint16_t RadioVendorCommand(const uint8_t* req, uint16_t req_len, uint8_t* resp,
                                           : Reply(resp, kBadRequest);
 }
 
-bool RadioCommandHook(const uint8_t* req, uint16_t req_len, uint8_t* resp,
-                      uint16_t resp_cap, uint16_t& out_len)
-{
-  if (req_len >= 2U && req[0] == kCommand)
-  {
-    out_len = RadioVendorCommand(req, req_len, resp, resp_cap);
-    return true;
-  }
-  return DapSessionHandleUsbCommand(req, req_len, resp, resp_cap, out_len);
-}
 }  // namespace XrDap

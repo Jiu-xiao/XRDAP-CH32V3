@@ -20,8 +20,8 @@ target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 # 96 MHz: LibXR CH32Flash needs SYSCLK <= 120 MHz (common/sysclk.h).
 add_executable(bootloader.elf main.c bootloader.cpp "${XRDAP_ROOT}/common/sysclk.c")
 target_compile_definitions(bootloader.elf PRIVATE XRDAP_SYSCLK_HZ=96000000)
-# Family names (vendor, serial prefix) from XRDAP-Core; header only.
-target_include_directories(bootloader.elf PRIVATE "${XRDAP_ROOT}/xrdap-core/probe")
+# Family names (vendor, serial prefix) and the chip UID from XRDAP-Core; header only.
+target_include_directories(bootloader.elf PRIVATE "${XRDAP_ROOT}/xrdap-core")
 target_link_libraries(bootloader.elf PRIVATE platform xr)
 # LibXR allocates the DFU and USB buffers from the heap at start-up.
 xrdap_add_image(bootloader.elf ${XRDAP_BOOTLOADER_BASE} ${XRDAP_BOOTLOADER_SIZE} 0x8000)

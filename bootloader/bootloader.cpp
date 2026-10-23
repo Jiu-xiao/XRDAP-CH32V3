@@ -22,13 +22,13 @@
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
 #include "ch32v30x.h"
-#include "chip_uid.h"
 #include "dfu/dfu_bootloader.hpp"
 #include "flash_layout.hpp"
 #include "libxr.hpp"
-#include "probe_identity.hpp"
 #include "reserved_ram.h"
 #include "thread.hpp"
+#include "xrdap/probe/chip_uid.hpp"
+#include "xrdap/probe/probe_identity.hpp"
 
 namespace
 {
@@ -194,9 +194,9 @@ extern "C" void bootloader_main()
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, XrDap::kVendorName,
       "XR-DAP-V307 DFU", XrDap::kSerialPrefix);
-  static LibXR::CH32USBOtgHS usb(
-      {{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid, 0x0100, {&kStrings}, {{&dfu}},
-      {reinterpret_cast<void*>(XRDAP_CHIP_UID_ADDR), XRDAP_CHIP_UID_SIZE});
+  static LibXR::CH32USBOtgHS usb({{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid, 0x0100,
+                                 {&kStrings}, {{&dfu}},
+                                 {XrDap::F1ChipUid(), XrDap::kF1ChipUidBytes});
   usb.Init(false);
   usb.Start(false);
 
@@ -209,8 +209,8 @@ extern "C" void bootloader_main()
     {
       JumpToApp();
     }
-    // Bare-metal LibXR runs its timer tasks inside Sleep, and the DFU backend erases and
-    // programs the flash from a 1 ms timer task, so every pass sleeps one tick.
+    // dfu.Process() erases and programs the flash in this loop; one pass per millisecond
+    // keeps up with the DFU poll timeout.
     LibXR::Thread::Sleep(1);
   }
 }

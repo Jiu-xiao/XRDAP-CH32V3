@@ -12,7 +12,7 @@ int main(void)
   SystemCoreClockUpdate();
 
   // LibXR's CH32 timebase reads SysTick as a free-running 64-bit HCLK counter (enabled,
-  // HCLK, no auto-reload, counting up) and sets up its own 1 ms compare interrupt.
+  // HCLK, no auto-reload, counting up, no interrupt).
   SysTick->CTLR = 0;
   SysTick->SR = 0;
   SysTick->CNT = 0;

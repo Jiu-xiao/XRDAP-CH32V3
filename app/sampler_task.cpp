@@ -3,17 +3,14 @@
 
 #include "ch32v30x.h"
 #include "thread.hpp"
-#include "timebase.hpp"
 
 namespace XrDap
 {
 namespace
 {
 constexpr uint32_t kTaskStackBytes = 3072;  // one frame on the stack plus SWD calls
-// TIM7 counts microseconds; its 16-bit counter limits a timed period to this.
-constexpr uint32_t kMaxTimerPeriodUs = 65535U;
-
-DapVendor* tick_vendor = nullptr;
+// TIM7 counts microseconds in a 16-bit counter.
+constexpr uint32_t kMaxCounterUs = 65535U;
 
 /// TIM6/TIM7 run from PCLK1, doubled when APB1 is divided (RM, clock tree).
 uint32_t Tim7ClockHz()
@@ -24,8 +21,10 @@ uint32_t Tim7ClockHz()
   return clocks.PCLK1_Frequency * (divided ? 2U : 1U);
 }
 
-// TIM7 (basic timer, RM chapter 16) counts at 1 MHz and raises one update interrupt per
-// period. TIM7（基本定时器，RM 第 16 章）按 1 MHz 计数，每个周期产生一次更新中断。
+// TIM7 counts at 1 MHz and raises an update interrupt per timer period. A tick period
+// longer than the 16-bit counter is split into `repeat` equal timer periods and every
+// repeat-th interrupt is a tick; the split rounds the period down by less than `repeat`
+// microseconds (under 0.002 %).
 class Tim7Tick final : public Vendor::TickTimer
 {
  public:
@@ -38,35 +37,58 @@ class Tim7Tick final : public Vendor::TickTimer
     NVIC_EnableIRQ(TIM7_IRQn);
   }
 
-  // Periods beyond the 16-bit counter go without the timer.
-  bool Start(uint64_t start_us, uint32_t period_us) override
+  void Start(uint32_t period_us) override
   {
-    if (period_us > kMaxTimerPeriodUs)
+    if (period_us == 0U)
     {
-      return false;
+      period_us = 1U;
     }
     TIM_Cmd(TIM7, DISABLE);
+    repeat_ = (period_us + kMaxCounterUs - 1U) / kMaxCounterUs;
+    count_ = 0U;
     TIM7->PSC = static_cast<uint16_t>(Tim7ClockHz() / 1000000U - 1U);
-    TIM7->ATRLR = static_cast<uint16_t>(period_us - 1U);
+    TIM7->ATRLR = static_cast<uint16_t>(period_us / repeat_ - 1U);
     TIM7->SWEVGR = TIM_PSCReloadMode_Immediate;  // UG loads PSC and ATRLR
-    const auto now = static_cast<uint64_t>(LibXR::Timebase::GetMicroseconds());
-    TIM7->CNT = static_cast<uint16_t>((now - start_us) % period_us);
+    TIM7->CNT = 0U;
     TIM_ClearITPendingBit(TIM7, TIM_IT_Update);
     TIM_Cmd(TIM7, ENABLE);
-    return true;
   }
 
   void Stop() override { TIM_Cmd(TIM7, DISABLE); }
+
+  /// TIM7 中断调用 / Called by the TIM7 interrupt.
+  void OnInterrupt()
+  {
+    count_ = count_ + 1U;
+    if (count_ < repeat_)
+    {
+      return;
+    }
+    count_ = 0U;
+    if (vendor_ != nullptr)
+    {
+      vendor_->OnTickIsr();
+    }
+  }
+
+  DapVendor* vendor_ = nullptr;
+
+ private:
+  volatile uint32_t repeat_ = 1U;
+  volatile uint32_t count_ = 0U;
 };
+
+Tim7Tick* tick = nullptr;
 }  // namespace
 
 void StartSamplerTask(DapVendor& vendor, uint32_t priority)
 {
-  static Tim7Tick tick;
+  static Tim7Tick timer;
   static LibXR::Thread thread;
-  tick_vendor = &vendor;
+  timer.vendor_ = &vendor;
+  tick = &timer;
   thread.Create<DapVendor*>(
-      &vendor, [](DapVendor* v) { v->RunSamplerTask(&tick); }, "dap_sampler",
+      &vendor, [](DapVendor* v) { v->RunSamplerTask(*tick); }, "dap_sampler",
       kTaskStackBytes, static_cast<LibXR::Thread::Priority>(priority));
 }
 }  // namespace XrDap
@@ -78,8 +100,8 @@ extern "C" __attribute__((interrupt("WCH-Interrupt-fast"))) void TIM7_IRQHandler
     return;
   }
   TIM_ClearITPendingBit(TIM7, TIM_IT_Update);
-  if (XrDap::tick_vendor != nullptr)
+  if (XrDap::tick != nullptr)
   {
-    XrDap::tick_vendor->WakeSamplerFromIsr();
+    XrDap::tick->OnInterrupt();
   }
 }

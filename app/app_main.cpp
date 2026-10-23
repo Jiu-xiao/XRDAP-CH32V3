@@ -14,7 +14,6 @@
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
 #include "config.hpp"
-#include "dap_vendor.hpp"
 #include "daplink_v2_profile_swd.hpp"
 #include "debug/swd_general_gpio.hpp"
 #include "dfu/dfu_runtime.hpp"
@@ -23,6 +22,7 @@
 #include "probe_info.hpp"
 #include "reserved_ram.h"
 #include "sampler_task.hpp"
+#include "xrdap/session/executor.hpp"
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 #include "status_lights.hpp"
 #endif
@@ -37,9 +37,6 @@ namespace
 {
 using namespace XrDap;
 
-constexpr uint16_t kUsbVid = 0x1D50;  // XRUSB VID:PID, shared by the XR-DAP family
-constexpr uint16_t kUsbPid = 0x6199;
-constexpr uint16_t kUsbBcd = 0x0300;  // distinct from the ESP32 XR-DAP releases
 constexpr uint16_t kDapPacketSize = 1024;
 constexpr uint8_t kDapPacketCount = 4;
 constexpr uint32_t kSamplerPriority = 5;
@@ -48,18 +45,17 @@ constexpr uint32_t kSamplerPriority = 5;
 // shares its priority so time slicing still runs it.
 constexpr uint32_t kLightsPriority = 3;
 #endif
-// Delay-loop iterations per microsecond of the SWD half period, as LibXR's
-// SwdGeneralGPIO counts them. A half period takes a fixed ~60 ns plus ~14.6 ns per
-// iteration at 216 MHz, which LibXR does not model. The SWD clock does not need to be
-// exact: with this factor settings from ~24 MHz up use the no-delay path (~14 MHz on
-// wdap), and slow settings run up to ~40 % fast. Other core clocks scale it.
-constexpr uint32_t kSwdLoopsPerUs =
-    static_cast<uint32_t>((48ULL * XRDAP_APP_SYSCLK_HZ) / 216'000'000ULL);
+// SWD bit-bang timing in CPU cycles (LibXR SwdGpioTiming, x10): one SWCLK period on the
+// delayed path costs a + b * N cycles, N delay loops per half period; the path without
+// delay costs c cycles per period. From the half period measured on wdap at 216 MHz
+// (about 60 ns + 14.6 ns per loop; no-delay path about 14 MHz). Provisional: to be
+// calibrated again with this libxr, whose unrolled byte loops change the cost per bit.
+constexpr LibXR::Debug::SwdGpioTiming kSwdTiming{63, 259, 154};
 
 using Swclk = FastGpioFor<Board::kSwclk>;
 using Swdio = FastGpioFor<Board::kSwdio>;
 using Swd = LibXR::Debug::SwdGeneralGPIO<Swclk, Swdio>;
-using Dap =
+using DapClass =
     LibXR::USB::DapLinkV2Class<Swd, kDapPacketSize, kDapPacketCount, kDapPacketSize>;
 
 alignas(64) uint8_t ep0_buffer[64];
@@ -108,85 +104,75 @@ extern "C" void app_main()
 
   static Swclk swclk;
   static Swdio swdio;
-  static Swd swd(swclk, swdio, kSwdLoopsPerUs);
+  static Swd swd(swclk, swdio, XRDAP_APP_SYSCLK_HZ, kSwdTiming);
   static LibXR::CH32GPIO nreset(Board::kNreset.Port(), Board::kNreset.Mask());
   nreset.Write(true);
 
-  static Dap dap(LibXR::USB::Endpoint::EPNumber::EP1, LibXR::USB::Endpoint::EPNumber::EP1,
-                 swd, &nreset);
+  static DapClass dap(LibXR::USB::Endpoint::EPNumber::EP1,
+                      LibXR::USB::Endpoint::EPNumber::EP1, swd, &nreset);
   static char serial[SerialBufferSize(kChipUidSize)];
   FormatSerial(ChipUid(), kChipUidSize, serial);
   SetProbeInfo(dap, {kProductName, Board::kName, serial, kFirmwareVersion});
   static DfuRuntime dfu(RestartIntoBootloader);
-  // XR vendor extension (0x80..0x85: multi-address read/write, probe-side sampling) from
-  // XRDAP-Core. Its sampling task outranks the DAP loop (priority 3).
-  static XrDap::DapVendor vendor(swd, kDapPacketSize);
-  vendor.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
+  // XRDAP-Core: one transport owns the probe at a time (USB, or the radio peer on a
+  // remote), every DAP command goes through the executor, and the XR vendor extension
+  // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset ends
+  // the USB session. The sampling task outranks the DAP loop (priority 3).
+  static SessionOwner session;
+  session.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
+  static DapVendor vendor(swd, session);
+  static DapActivity activity;
+  static Executor<DapClass> exec(dap, session, vendor, activity);
   StartSamplerTask(vendor, kSamplerPriority);
 #ifdef XRDAP_HAS_STATUS_LIGHTS
   StatusLightsBegin(
-      kLightsPriority, vendor, [](void* d) { return static_cast<Dap*>(d)->IsInited(); },
-      &dap);
+      kLightsPriority, activity,
+      [](void* d) { return static_cast<DapClass*>(d)->IsInited(); }, &dap);
 #endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
-  // Commands from the peer: 0x9F for this probe's radio and settings, DAP for the target.
-  // When the remote session ends, what the peer started stops with it (B6). Until
-  // XRDAP-Core has a radio transport, "what the peer started" is sampling begun while a
-  // radio session drove the probe.
-  static bool peer_drove_probe = false;
+  // On a remote, the peer's commands are the RADIO transport; its session ends with the
+  // link's session (B6), which ends RADIO's ownership and the sampling it started.
   DapSessionInit(
       +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
       {
-        if (req[0] == kProbeCommand)
-          return RadioVendorCommand(req, req_len, resp, resp_cap);
-        peer_drove_probe = true;
         uint16_t size = 0;
-        (void)dap.ExecuteExternal(req, req_len, resp, resp_cap, size);
+        exec.Execute(Transport::RADIO, req, req_len, resp, resp_cap, size);
         return size;
       },
-      +[]()
+      +[]() { exec.EndSession(Transport::RADIO); });
+  // After the owner check: 0x9F is this probe's radio and settings; on the host, the
+  // session layer forwards USB commands over the radio during a wireless session.
+  exec.SetForwarder(
+      +[](void*, Transport t, const uint8_t* req, uint16_t len, uint8_t* resp,
+          uint16_t cap, uint16_t& out)
       {
-        if (!peer_drove_probe) return;
-        peer_drove_probe = false;
-        vendor.OnTransportClosed();
-      });
-  // The radio link takes 0x9F (this probe's radio and settings, not DAP) and, during a
-  // session over the radio, every command; those forwarded still count as DAP activity.
-  // What runs here goes to the vendor extension, which passes standard commands on.
-  dap.SetCommandHook(
-      +[](void* ctx, const uint8_t* req, uint16_t req_len, uint8_t* resp,
-          uint16_t resp_cap, uint16_t& out_len)
-      {
-        if (RadioCommandHook(req, req_len, resp, resp_cap, out_len))
+        if (req[0] == kProbeCommand)
         {
-          if (req_len != 0U && req[0] != kProbeCommand)
-          {
-            static_cast<XrDap::DapVendor*>(ctx)->Observe(req, req_len);
-          }
+          out = RadioVendorCommand(req, len, resp, cap);
           return true;
         }
-        return XrDap::DapVendor::Hook(ctx, req, req_len, resp, resp_cap, out_len);
+        return t == Transport::USB &&
+               DapSessionHandleUsbCommand(req, len, resp, cap, out);
       },
-      &vendor);
+      nullptr);
   DapSessionApplyConfig();
-#else
-  dap.SetCommandHook(&XrDap::DapVendor::Hook, &vendor);
 #endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, kVendorName, kUsbProductName,
       kSerialPrefix);
   static LibXR::CH32USBOtgHS usb({{ep0_buffer}, {ep1_dap_out}},
-                                 {{ep0_buffer}, {ep1_dap_in}}, kUsbVid, kUsbPid, kUsbBcd,
-                                 {&kStrings}, {{&dap, &dfu}}, {ChipUid(), kChipUidSize});
+                                 {{ep0_buffer}, {ep1_dap_in}}, Family::kUsbVid,
+                                 Family::kUsbPid, Family::kBcdCh32V307, {&kStrings},
+                                 {{&dap, &dfu}}, {ChipUid(), kChipUidSize});
   usb.Init(false);
   usb.Start(false);
 
-  // LibXR runs DAP commands when the application calls Step(). Step waits at most
-  // kStepWaitMs for a command, so a DFU DETACH is carried out from the same loop soon
-  // after its advertised timeout. With the radio in use the loop does not wait: it
-  // serves the radio between USB commands and watches KEY2 for pairing.
+  // StepUsb() waits up to kStepWaitMs for a USB command (libxr WaitForWork, without
+  // holding the executor's turn) and then runs it, so a DFU DETACH is carried out from
+  // the same loop soon after its advertised timeout. With the radio in use the loop does
+  // not wait: it serves the radio between USB commands and watches KEY2 for pairing.
   constexpr uint32_t kStepWaitMs = 10;
   for (;;)
   {
@@ -197,12 +183,12 @@ extern "C" void app_main()
     if (DapSessionRadioInUse())
     {
       DapSessionService();
-      (void)dap.Step(0);
+      (void)exec.StepUsb(0);
       dfu.Process();
       continue;
     }
 #endif
-    (void)dap.Step(kStepWaitMs);
+    (void)exec.StepUsb(kStepWaitMs);
     dfu.Process();
   }
 }

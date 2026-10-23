@@ -1,8 +1,8 @@
 [submodule "libxr"]
 	path = libxr
 	url = https://github.com/xrobot-org/libxr.git
-	branch = feat/xrdap
+	branch = feat/xrdap-r2-swd-loop
 [submodule "xrdap-core"]
 	path = xrdap-core
 	url = https://github.com/Jiu-xiao/XRDAP-Core.git
-	branch = main
+	branch = feat/xrdap-core-r2

@@ -57,7 +57,8 @@ target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
                          app/settings_log.cpp app/sampler_task.cpp common/sysclk.c)
 target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ})
-# XR vendor extension, status light rule and probe identity from XRDAP-Core.
+# XRDAP-Core: session owner and command executor, XR vendor extension, status light
+# rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
 include(xrdap-core/xrdap_core.cmake)
 target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
 target_include_directories(xrdap.elf PRIVATE app ${XRDAP_CORE_INCLUDE_DIRS})

@@ -27,15 +27,6 @@ namespace XrDap
 /// 本探针的厂商命令字节 / This probe's vendor command byte.
 inline constexpr uint8_t kProbeCommand = 0x9F;
 
-/// @brief DAP 命令钩子的无线部分：处理 0x9F，其余命令交给会话层，会话走无线时由它转发 /
-///        Radio part of the DAP command hook: answers 0x9F and hands every other command
-///        to the session layer, which forwards it during a session over the radio.
-/// @return 命令已处理、应答已填好时为 true / true when the command was handled and the
-///         answer is filled in.
-/// @note 在主任务里调用（DAP 类的 Step）/ Called on the main task (the DAP class's Step).
-bool RadioCommandHook(const uint8_t* req, uint16_t req_len, uint8_t* resp,
-                      uint16_t resp_cap, uint16_t& out_len);
-
 /// @brief 处理一条 0x9F 命令（来自 USB 或对端），返回应答长度 / Answer one 0x9F command
 ///        (from USB or from the peer) and return the answer size.
 /// @note 主任务；resp_cap 至少 80 字节 / Main task; resp_cap at least 80 bytes.

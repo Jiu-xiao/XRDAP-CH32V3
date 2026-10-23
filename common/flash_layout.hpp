@@ -32,8 +32,7 @@ inline constexpr uint32_t kConfigSize = XRDAP_CONFIG_SIZE;
 ///        settings.
 constexpr bool OverlapsConfig(uint32_t offset, uint32_t size)
 {
-  return size != 0U &&
-         offset<kConfigOffset + kConfigSize&& static_cast<uint64_t>(offset) + size>
-             kConfigOffset;
+  const uint64_t end = static_cast<uint64_t>(offset) + size;
+  return size != 0U && offset < kConfigOffset + kConfigSize && end > kConfigOffset;
 }
 }  // namespace XrDap::Layout
