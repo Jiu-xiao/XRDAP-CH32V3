@@ -44,7 +44,15 @@ def find(ids, serial=None):
     backend = libusb_package.get_libusb1_backend()
     for dev in usb.core.find(find_all=True, idVendor=ids[0], idProduct=ids[1], backend=backend):
         if serial is None:
-            return dev
+            if ids != APP_ID:
+                return dev
+            # Other LibXR devices share 1d50:6199; only an XR-DAP probe is meant.
+            try:
+                if (dev.product or "").startswith("XR-DAP"):
+                    return dev
+            except (ValueError, NotImplementedError, usb.core.USBError):
+                pass
+            continue
         try:
             number = dev.serial_number or ""
         except (ValueError, NotImplementedError, usb.core.USBError):
