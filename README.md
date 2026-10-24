@@ -4,12 +4,13 @@
 
 用 CH32V307 做的 CMSIS-DAP v2 调试探针，基于 [libxr](https://github.com/xrobot-org/libxr)。探针经 USB 高速（480 Mbit/s）接口提供 Bulk v2 DAP 接口，包长 1024 字节，Keil、pyOCD、probe-rs、OpenOCD 把它当普通的 CMSIS-DAP 探针。Flash 开头是一个 USB DFU bootloader，固件升级只需一根 USB 线。
 
-固件按板子编译，目前有两种板子：
+固件按板子编译，目前有三种板子：
 
 | 板子 | 芯片、晶振 | 目标接口 | bootloader 键 |
 |---|---|---|---|
 | `evt`：CH32V307 评估板（[CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template) 用的板子） | CH32V307VCT6，8 MHz | SWCLK PB13，SWDIO PB14，NRST PB12 | PB3 按键 |
 | `wdap`：“高速无线 DAP 调试器”板 | CH32V307RCT6，12 MHz | 2×6 排针：TCK/SWCLK（3 脚）、TMS/SWDIO（4 脚）、RST（5 脚） | KEY2 |
+| `v305`：XRDAP-CH32V3 的 CH32V305 板（见 1 节末尾） | CH32V305FBP6，12 MHz | SWCLK PB13，SWDIO PA9，NRST PC8 | XRDAP-CH32V3 的 bootloader；IAP 键 PC7 |
 
 ## 1. 准备
 
@@ -45,6 +46,28 @@ python tools/dfu_update.py xrdap.elf.bin
 `wdap` 板上 8 颗 WS2812B 显示调试状态，灯色按 XR-DAP 全系列共用的状态灯规则（[XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)）。上电时彩虹扫过一次。USB 已连上电脑时为红色；调试会话走无线时为蓝色（主机端，以及远端会话打开期间的远端）；都没有时为紫色；配对进行中紫色快闪。上位机经 DAP_HostStatus 报告已连接时主色与紫色来回（2 s 一次），目标运行中红蓝来回（1 s 一次）；DAP_Disconnect 或 5 s 没有任何命令时回到主色。每条 DAP 命令让灯链亮一下，并让一颗白点前进一格，命令不断时约每秒 15 次。
 
 灯由 TIM1_CH3N（PB15）的 PWM 加 DMA 驱动，每位的高电平宽度按 WS2812B-2020 数据手册的时序设置，CPU 每 20 ms 只填一次缓冲。
+
+### CH32V305 板（v305，本固件尚未在硬件上验证）
+
+`v305` 是 [XRDAP-CH32V3](https://github.com/Jiu-xiao/XRDAP-CH32V3) 用的 CH32V305 板（CH32V305FBP6、12 MHz 晶振，电路与 WCH-LinkE 相同）。本固件在它上面只做有线 USB 高速 DAP，没有射频，引脚与 XRDAP-CH32V3 的应用相同：
+
+| 用途 | 引脚 |
+|---|---|
+| SWCLK | PB13（板上连到 PA14） |
+| SWDIO | PA9（封装内与 PA13 合封），同一个引脚双向，推挽 |
+| 目标复位 | PC8 |
+| 指示灯 | PC9（与 PA8 合封），低电平点亮 |
+| 上电后保持低电平 | PA5、PB12（目标供电开关） |
+
+板子沿用 XRDAP-CH32V3 的三段式启动：地址 0 的 stage1 跳到 `0x20000` 的 stage3 DFU bootloader（USB `1209:3070`），应用区为 `0x2000`–`0x20000`，最后 256 字节是 seal。本工程不编译这块板子的 bootloader，`tools/build.sh v305` 只产出应用。升级应用只走 DFU，不用 WCH-Link 写整片（会破坏 stage1 和 bootloader）：
+
+```
+dfu-util -d 1d50:6199,1209:3070 -a 0 -D xrdap.elf.bin
+```
+
+dfu-util 先向正在运行的应用发 DFU DETACH（应用写 RAM 顶部 `0x20007FF0` 的信箱后复位），bootloader 停在 DFU 并写入镜像和 seal。板上还是 XRDAP-CH32V3 的旧应用时，`-d` 用 `0d28:2041,1209:3070`。XRDAP-CH32V3 的 bootloader 默认不自动启动应用：上电和复位后停在 DFU，要用 XRDAP-CH32V3 的 `tools/ch32_usb_run_app.py`（厂商请求 `0x5A`）启动应用。上电时按住 IAP 键（PC7）也停在 DFU。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
+
+指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（XRDAP-CH32V3 的应用为 144 MHz）；`boards/v305.cmake` 的 `XRDAP_APP_SYSCLK_HZ` 改为 `144000000` 即回到标称频率。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
 
 ## 2. 无线调试（wdap）
 
@@ -102,7 +125,7 @@ SWD 由 GPIO 软件产生：设定值不低于不加延时路径的速度（`wda
 
 ## 4. 自己编译
 
-需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。bootloader 和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt` 或 `wdap` 选板子：
+需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。bootloader 和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap` 或 `v305` 选板子（`v305` 沿用 XRDAP-CH32V3 的 bootloader，没有 bootloader 工程）：
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V307.git
@@ -151,6 +174,8 @@ ctest --test-dir build/tests
 | `0x0003F700`–`0x0003FEFF` | 设置区：角色、调制方式、配对，固件升级时保留 |
 | `0x0003FF00`–`0x0003FFFF` | seal：应用大小和 CRC32，由 bootloader 在 DFU 下载结束时写入 |
 
+`v305` 的应用窗口为 `0x00002000`–`0x0001FFFF`（XRDAP-CH32V3 的布局），最后 256 字节为 seal，前面 2 KB 为设置区位置，固件不写设置。
+
 bootloader 的 DFU 下载只能写到设置区之前：超过 `0x2F700` 字节的镜像下载失败，设置区不受影响。两种 RAM 配置（FLASH 192K + RAM 128K、FLASH 256K + RAM 64K）都可用，固件按 64 KB RAM 链接；RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
 
 `wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比，块读比 144 MHz 时快约 1.5 倍。时钟由板级文件选择（`boards/wdap.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`），改为 `144000000` 即回到标称频率；bootloader 运行在 96 MHz。
@@ -163,7 +188,7 @@ bootloader 的 DFU 下载只能写到设置区之前：超过 `0x2F700` 字节�
 
 ### 板子文件
 
-`boards/<名字>.cmake` 写晶振频率、应用主频和板上有哪些部件（`XRDAP_HAS_LED`、`XRDAP_HAS_RADIO`、`XRDAP_HAS_STATUS_LIGHTS`），`boards/<名字>.hpp` 写 bootloader 键、指示灯、状态灯、射频和目标引脚。增加一种板子只需要这两个文件。
+`boards/<名字>.cmake` 写晶振频率、应用主频、板上有哪些部件（`XRDAP_HAS_LED`、`XRDAP_HAS_RADIO`、`XRDAP_HAS_STATUS_LIGHTS`、`XRDAP_HAS_STATUS_LED`）、是否沿用别的工程的 bootloader（`XRDAP_EXTERNAL_BOOTLOADER`，此时还写应用窗口和启动信箱魔数）以及芯片内存和各缓冲区大小（`XRDAP_RAM_SIZE`、`XRDAP_RTOS_HEAP_SIZE` 等，默认值和含义见 `cmake/ch32v307.cmake`），`boards/<名字>.hpp` 写 bootloader 键、指示灯、状态灯、射频、目标引脚、SWD 时序和占用引脚前的初始化（`Board::Init()`）。增加一种板子只需要这两个文件。
 
 ### libxr 版本
 

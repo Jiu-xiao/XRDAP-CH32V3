@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # XR-DAP-V307 application: CMSIS-DAP v2 probe on FreeRTOS, linked behind the
-# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap.
+# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|v305.
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v307.cmake")
 
 # Firmware version, reported in DAP_Info: the version below plus the commit it was built
@@ -56,7 +56,10 @@ target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
 add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
                          app/settings_log.cpp app/sampler_task.cpp common/sysclk.c)
-target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ})
+target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
+                           XRDAP_APP_STACK_WORDS=${XRDAP_APP_STACK_WORDS}
+                           XRDAP_DAP_PACKET_COUNT=${XRDAP_DAP_PACKET_COUNT}
+                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES})
 # XRDAP-Core: session owner and command executor, XR vendor extension, status light
 # rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
 include(xrdap-core/xrdap_core.cmake)
@@ -76,8 +79,12 @@ if(XRDAP_HAS_STATUS_LIGHTS)
   target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)
   target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LIGHTS)
 endif()
+if(XRDAP_HAS_STATUS_LED)
+  target_sources(xrdap.elf PRIVATE app/status_led.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LED)
+endif()
 target_link_libraries(xrdap.elf PRIVATE platform freertos xr)
 # The image stops in front of the settings and the seal.
 math(EXPR XRDAP_APP_IMAGE_SIZE "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}"
      OUTPUT_FORMAT HEXADECIMAL)
-xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_IMAGE_SIZE} 0x1000)
+xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_IMAGE_SIZE} ${XRDAP_C_HEAP_SIZE})

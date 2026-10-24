@@ -28,4 +28,14 @@ inline constexpr BoardPin kSwclk{kPortB, 13};
 inline constexpr BoardPin kSwdio{kPortB, 14};
 /// 目标复位，低电平有效 / Target reset, active low.
 inline constexpr BoardPin kNreset{kPortB, 12};
+
+/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10）/ SWD bit-bang timing (b,
+/// a, c of LibXR SwdGpioTiming, cycles x10).
+inline constexpr uint32_t kSwdStepX10 = 63;
+inline constexpr uint32_t kSwdInterceptX10 = 259;
+inline constexpr uint32_t kSwdFastX10 = 154;
+
+/// 应用占用目标引脚之前调用；本板无事可做 / Called before the application takes the
+/// target pins; nothing to do on this board.
+inline void Init() {}
 }  // namespace XrDap::Board

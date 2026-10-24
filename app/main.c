@@ -20,7 +20,7 @@ int main(void)
   (void)XrDapSysClockInit();
   SystemCoreClockUpdate();
   __enable_irq();
-  xTaskCreate(AppTask, "app", 1536, NULL, 3, NULL);  // 6 KB stack
+  xTaskCreate(AppTask, "app", XRDAP_APP_STACK_WORDS, NULL, 3, NULL);  // per board
   vTaskStartScheduler();
   for (;;)
   {

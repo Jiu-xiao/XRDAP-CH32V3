@@ -4,12 +4,18 @@
 
 Steps: send DFU DETACH to the running application's DFU runtime interface, which
 restarts the probe into the bootloader (holding the board's boot key while plugging the
-probe in does the same); wait for the bootloader (1209:3072); download the image with
+probe in does the same); wait for the bootloader (1209:3072, or --bootloader); download the image with
 DFU 1.1 DNLOAD blocks; finish with an empty DNLOAD. The bootloader then writes the seal
 record and starts the new application.
 
   python tools/dfu_update.py build/app-evt/xrdap.elf.bin
   python tools/dfu_update.py --detach-only
+
+The v305 board keeps the bootloader of XRDAP-CH32V3 (1209:3070), which does not start
+the application by itself; --run-app sends its RUN_APP request (vendor request 0x5A)
+after the download, and --upload reads the image in the application window back first:
+
+  python tools/dfu_update.py --bootloader 1209:3070 --upload old.bin --run-app xrdap.elf.bin
 
 Needs pyusb and libusb-package (pip install pyusb libusb-package). On Windows the
 probe announces WinUSB, so no driver installation is required.
@@ -27,7 +33,8 @@ APP_ID = (0x1D50, 0x6199)
 BOOTLOADER_ID = (0x1209, 0x3072)
 
 DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
-DFU_DETACH, DFU_DNLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 3, 4, 6
+DFU_DETACH, DFU_DNLOAD, DFU_UPLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 2, 3, 4, 6
+RUN_APP = 0x5A  # XRDAP-CH32V3 bootloader: start the application (vendor, interface)
 STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
 OUT = usb.util.CTRL_OUT | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
@@ -104,13 +111,16 @@ def detach(serial):
     app.ctrl_transfer(OUT, DFU_DETACH, 1000, intf, None, timeout=2000)
 
 
-def download(path, serial):
-    image = open(path, "rb").read()
+def open_bootloader(serial):
     dev = wait_for(BOOTLOADER_ID, serial, 30)
     if dev is None:
-        raise RuntimeError("bootloader 1209:3072 not found")
+        raise RuntimeError(f"bootloader {BOOTLOADER_ID[0]:04x}:{BOOTLOADER_ID[1]:04x} not found")
     intf, transfer = dfu_interface(dev)
     usb.util.claim_interface(dev, intf)
+    return dev, intf, transfer
+
+
+def to_idle(dev, intf):
     # An interrupted download leaves the bootloader in dfuERROR or mid-download; start
     # from dfuIDLE either way.
     status, _, state = get_status(dev, intf)
@@ -121,6 +131,42 @@ def download(path, serial):
     status, _, state = get_status(dev, intf)
     if state != STATE_IDLE:
         raise RuntimeError(f"bootloader not idle: status {status}, state {state}")
+
+
+def upload(path, serial):
+    """Read the image in the application window back (DFU UPLOAD until a short block)."""
+    dev, intf, transfer = open_bootloader(serial)
+    to_idle(dev, intf)
+    data = bytearray()
+    block = 0
+    while True:
+        chunk = bytes(dev.ctrl_transfer(IN, DFU_UPLOAD, block, intf, transfer, timeout=5000))
+        data += chunk
+        block += 1
+        if len(chunk) < transfer:
+            break
+    open(path, "wb").write(data)
+    print(f"uploaded {len(data)} bytes to {path}")
+    to_idle(dev, intf)
+    usb.util.dispose_resources(dev)
+
+
+def run_app(serial):
+    dev, intf, _ = open_bootloader(serial)
+    try:
+        dev.ctrl_transfer(usb.util.CTRL_OUT | usb.util.CTRL_TYPE_VENDOR |
+                          usb.util.CTRL_RECIPIENT_INTERFACE, RUN_APP, 0, intf, None,
+                          timeout=1000)
+    except usb.core.USBError:
+        pass  # the bootloader may leave before the status stage completes
+    usb.util.dispose_resources(dev)
+    print("RUN_APP sent")
+
+
+def download(path, serial):
+    image = open(path, "rb").read()
+    dev, intf, transfer = open_bootloader(serial)
+    to_idle(dev, intf)
     started = time.monotonic()
     for block, offset in enumerate(range(0, len(image), transfer)):
         dev.ctrl_transfer(OUT, DFU_DNLOAD, block, intf, image[offset:offset + transfer],
@@ -149,7 +195,14 @@ def main():
     ap.add_argument("image", nargs="?", help="application .bin")
     ap.add_argument("--serial", help="probe serial or its tail")
     ap.add_argument("--detach-only", action="store_true", help="only restart into the bootloader")
+    ap.add_argument("--bootloader", default="1209:3072",
+                    help="VID:PID of the bootloader (1209:3070: XRDAP-CH32V3 on v305)")
+    ap.add_argument("--upload", metavar="FILE", help="read the current image back first")
+    ap.add_argument("--run-app", action="store_true",
+                    help="send RUN_APP after the download (XRDAP-CH32V3 bootloader)")
     args = ap.parse_args()
+    global BOOTLOADER_ID
+    BOOTLOADER_ID = tuple(int(x, 16) for x in args.bootloader.split(":"))
     detach(args.serial)
     if args.detach_only:
         ok = wait_for(BOOTLOADER_ID, args.serial, 10) is not None
@@ -157,7 +210,12 @@ def main():
         return 0 if ok else 1
     if not args.image:
         ap.error("image is required")
+    if args.upload:
+        upload(args.upload, args.serial)
     download(args.image, args.serial)
+    if args.run_app:
+        time.sleep(0.5)
+        run_app(args.serial)
     ok = wait_for(APP_ID, args.serial, 10) is not None
     print("application running" if ok else "application did not appear")
     return 0 if ok else 1

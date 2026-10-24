@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// XR-DAP-V307: a CMSIS-DAP v2 debug probe on the CH32V307, built on LibXR.
+// XR-DAP-V307: a CMSIS-DAP v2 debug probe on the CH32V307 (and the CH32V305 board),
+// built on LibXR.
 //   USBHS: a Bulk v2 DAP interface plus a DFU runtime interface; DFU DETACH restarts
 //          into the bootloader for a firmware update.
 //
-// XR-DAP-V307：基于 LibXR 的 CH32V307 CMSIS-DAP v2 调试探针。
+// XR-DAP-V307：基于 LibXR 的 CH32V307（以及 CH32V305 板）CMSIS-DAP v2 调试探针。
 //   USBHS：Bulk v2 DAP 接口，外加 DFU runtime 接口；DFU DETACH 重启进入 bootloader 升级。
 
 #include <cstdint>
@@ -26,6 +27,9 @@
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 #include "status_lights.hpp"
 #endif
+#ifdef XRDAP_HAS_STATUS_LED
+#include "status_led.hpp"
+#endif
 #ifdef XRDAP_HAS_RADIO
 #include "dap_session.hpp"
 #include "pairing.hpp"
@@ -38,19 +42,18 @@ namespace
 using namespace XrDap;
 
 constexpr uint16_t kDapPacketSize = 1024;
-constexpr uint8_t kDapPacketCount = 4;
+constexpr uint8_t kDapPacketCount = XRDAP_DAP_PACKET_COUNT;  // per board (cmake)
 constexpr uint32_t kSamplerPriority = 5;
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 // The DAP loop runs at 3 and does not block while the radio is in use; the light task
 // shares its priority so time slicing still runs it.
 constexpr uint32_t kLightsPriority = 3;
 #endif
-// SWD bit-bang timing in CPU cycles (LibXR SwdGpioTiming, x10): one SWCLK period on the
-// delayed path costs a + b * N cycles, N delay loops per half period; the path without
-// delay costs c cycles per period. From the half period measured on wdap at 216 MHz
-// (about 60 ns + 14.6 ns per loop; no-delay path about 14 MHz). Provisional: to be
-// calibrated again with this libxr, whose unrolled byte loops change the cost per bit.
-constexpr LibXR::Debug::SwdGpioTiming kSwdTiming{63, 259, 154};
+// SWD bit-bang timing in CPU cycles (LibXR SwdGpioTiming, x10), per board: one SWCLK
+// period on the delayed path costs a + b * N cycles, N delay loops per half period; the
+// path without delay costs c cycles per period.
+constexpr LibXR::Debug::SwdGpioTiming kSwdTiming{
+    Board::kSwdStepX10, Board::kSwdInterceptX10, Board::kSwdFastX10};
 
 using Swclk = FastGpioFor<Board::kSwclk>;
 using Swdio = FastGpioFor<Board::kSwdio>;
@@ -97,6 +100,7 @@ void RestartIntoBootloader(void*)
 
 extern "C" void app_main()
 {
+  Board::Init();
   static LibXR::CH32Timebase timebase;
   LibXR::PlatformInit(3, 8192);
   BootGuardStart();
@@ -128,6 +132,10 @@ extern "C" void app_main()
   StatusLightsBegin(
       kLightsPriority, activity,
       [](void* d) { return static_cast<DapClass*>(d)->IsInited(); }, &dap);
+#endif
+#ifdef XRDAP_HAS_STATUS_LED
+  StatusLedBegin(
+      activity, [](void* d) { return static_cast<DapClass*>(d)->IsInited(); }, &dap);
 #endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
@@ -171,7 +179,8 @@ extern "C" void app_main()
 
   // StepUsb() waits up to kStepWaitMs for a USB command (libxr WaitForWork, without
   // holding the executor's turn) and then runs it, so a DFU DETACH is carried out from
-  // the same loop soon after its advertised timeout. With the radio in use the loop does
+  // the same loop soon after its advertised timeout, and the status LED is drawn at
+  // least every kStepWaitMs. With the radio in use the loop does
   // not wait: it serves the radio between USB commands and watches KEY2 for pairing.
   constexpr uint32_t kStepWaitMs = 10;
   for (;;)
@@ -190,5 +199,8 @@ extern "C" void app_main()
 #endif
     (void)exec.StepUsb(kStepWaitMs);
     dfu.Process();
+#ifdef XRDAP_HAS_STATUS_LED
+    StatusLedUpdate();
+#endif
   }
 }

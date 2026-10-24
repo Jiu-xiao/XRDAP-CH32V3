@@ -2,13 +2,15 @@ ENTRY( _start )
 
 /* Shared by the bootloader and the application: each passes its own image
    window with -Wl,--defsym=IMAGE_FLASH_BASE=... and IMAGE_FLASH_LENGTH=...
-   (see cmake/ch32v307.cmake). RAM is linked as 64 KB, which every CH32V307
-   FLASH/RAM split from 192K+128K to 256K+64K provides; the top
+   (see cmake/ch32v307.cmake). RAM is linked as RAM_SIZE bytes, 64 KB by default,
+   which every CH32V307 FLASH/RAM split from 192K+128K to 256K+64K provides (a board
+   on a smaller chip passes its own); the top
    RAM_TOP_RESERVED bytes survive a reset; their use is listed in common/reserved_ram.h. */
 
 __stack_size = DEFINED(STACK_SIZE) ? STACK_SIZE : 4096;
 __heap_size = DEFINED(HEAP_SIZE) ? HEAP_SIZE : 8192;
 __ram_top_reserved = DEFINED(RAM_TOP_RESERVED) ? RAM_TOP_RESERVED : 0x100;
+__ram_size = DEFINED(RAM_SIZE) ? RAM_SIZE : 64K;
 
 PROVIDE( _stack_size = __stack_size );
 PROVIDE( _heap_size = __heap_size );
@@ -17,7 +19,7 @@ PROVIDE( _ram_top_reserved = __ram_top_reserved );
 MEMORY
 {
 	FLASH (rx) : ORIGIN = IMAGE_FLASH_BASE, LENGTH = IMAGE_FLASH_LENGTH
-	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = (64K - __ram_top_reserved)
+	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = (__ram_size - __ram_top_reserved)
 }
 
 SECTIONS

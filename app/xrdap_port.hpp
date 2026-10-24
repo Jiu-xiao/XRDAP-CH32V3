@@ -17,7 +17,7 @@ namespace XrDap::Port
 {
 /// 采样帧缓冲字节数，2 的幂，INFO 会报告 / Sample frame buffer size, a power of two,
 /// reported by INFO.
-inline constexpr uint32_t kRingBytes = 4096;
+inline constexpr uint32_t kRingBytes = XRDAP_RING_BYTES;  // per board (cmake)
 
 /// Short critical section, held for at most a 1 KB copy / 短临界区，持有时间不超过拷贝
 /// 1 KB。

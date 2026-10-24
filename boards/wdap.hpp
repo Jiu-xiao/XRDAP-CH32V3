@@ -44,4 +44,19 @@ inline constexpr BoardPin kRadioDio1{kPortB, 1};
 /// Module RF switch: TXEN high to transmit, RXEN high to receive / 模块射频开关.
 inline constexpr BoardPin kRadioTxEn{kPortB, 11};
 inline constexpr BoardPin kRadioRxEn{kPortB, 12};
+
+/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10）：由 216 MHz 下测得的半
+/// 周期（约 60 ns + 每圈 14.6 ns，无延时路径约 14 MHz）换算；在 STM32H723 目标上验证：
+/// 无延时路径 13.45 MHz、N=1 为 7.05 MHz，各 300 轮 16 KiB 无错 / SWD bit-bang timing
+/// (b, a, c of LibXR SwdGpioTiming, cycles x10), from the half period measured at
+/// 216 MHz (about 60 ns + 14.6 ns per loop, undelayed path about 14 MHz); checked on an
+/// STM32H723 target: undelayed 13.45 MHz, N=1 7.05 MHz, 300 rounds of 16 KiB each without
+/// an error.
+inline constexpr uint32_t kSwdStepX10 = 63;
+inline constexpr uint32_t kSwdInterceptX10 = 259;
+inline constexpr uint32_t kSwdFastX10 = 154;
+
+/// 应用占用目标引脚之前调用；本板无事可做 / Called before the application takes the
+/// target pins; nothing to do on this board.
+inline void Init() {}
 }  // namespace XrDap::Board
