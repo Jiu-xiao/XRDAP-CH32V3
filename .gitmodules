@@ -6,3 +6,6 @@
 	path = xrdap-core
 	url = https://github.com/Jiu-xiao/XRDAP-Core.git
 	branch = feat/xrdap-core-r2
+[submodule "bootloader-ch32v3/libxr"]
+	path = bootloader-ch32v3/libxr
+	url = https://github.com/Jiu-xiao/libxr.git

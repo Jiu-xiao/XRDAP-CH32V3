@@ -1,3 +1,4 @@
 .history/**
 build/**
 .cache/**
+__pycache__/
