@@ -100,10 +100,13 @@ void RestartIntoBootloader(void*)
 
 extern "C" void app_main()
 {
+  // The watchdog first: a hang anywhere after this point ends in a watchdog reset, which
+  // on v305 leaves the board in its bootloader (autorun off) and on the CH32V307 boards
+  // restarts the sealed application.
+  BootGuardStart();
   Board::Init();
   static LibXR::CH32Timebase timebase;
   LibXR::PlatformInit(3, 8192);
-  BootGuardStart();
   ConfigInit();
 
   static Swclk swclk;
