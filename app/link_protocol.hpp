@@ -82,7 +82,9 @@ class Reassembler
   {
     INCOMPLETE,  ///< 还缺分片 / fragments still missing
     COMPLETE,    ///< 消息齐了，size() 为长度 / the message is complete, see size()
-    REJECTED,  ///< 分片与规范不符，已丢弃 / the fragment breaks the spec and was dropped
+    REJECTED,   ///< 分片与规范不符，已丢弃 / the fragment breaks the spec and was dropped
+    DUPLICATE,  ///< 刚拼齐的消息的分片，已丢弃 / a fragment of the message just
+                ///< completed, dropped
   };
 
   /// @param buffer 消息缓冲，capacity 字节 / Message buffer of `capacity` bytes.
@@ -92,13 +94,20 @@ class Reassembler
   }
 
   /// 丢掉拼了一半的消息 / Drop a partly assembled message.
-  void Reset() { mask_ = 0; }
+  void Reset()
+  {
+    mask_ = 0;
+    done_ = false;
+  }
 
   /// @brief 收下一片 / Take one fragment.
   /// @param packet 完整的包（含包头）/ The whole packet including the header.
   /// @param fragment 当前调制下的分片长度 / Fragment size of the current modulation.
   /// @note 序号、片数或总长与在拼的消息不同时，先丢掉在拼的消息 / A different sequence,
   ///       count or total first drops the message being assembled.
+  /// @note 消息拼齐后，同一消息的分片要从第 0 片重新开始，其余的作为 DUPLICATE 丢弃 /
+  ///       After a message completes, the same message starts again only with fragment 0;
+  ///       its other fragments are dropped as DUPLICATE.
   Result Add(const uint8_t* packet, int size, uint8_t fragment);
 
   uint16_t size() const { return total_; }
@@ -111,5 +120,6 @@ class Reassembler
   uint16_t total_ = 0;
   uint8_t sequence_ = 0;
   uint8_t count_ = 0;
+  bool done_ = false;  ///< 上一个消息刚拼齐 / the last message just completed
 };
 }  // namespace XrDap::Link

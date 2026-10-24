@@ -163,6 +163,36 @@ void TestReassemblyRestart()
   CHECK(r.sequence() == 1);
 }
 
+// CH3: a resend that completes the message early leaves the rest of its burst behind.
+// That tail must not start an assembly that completes in the middle of the next resend,
+// while the host is still transmitting and cannot hear the answer.
+void TestReassemblyResendTail()
+{
+  uint8_t buffer[Link::kMaxMessage];
+  Reassembler r(buffer, sizeof(buffer));
+  const auto a = Fragments(Message(1021, 4), 7, kGfsk);  // 5 fragments
+  CHECK(a.size() == 5);
+  auto add = [&](size_t i)
+  { return r.Add(a[i].data(), static_cast<int>(a[i].size()), kGfsk); };
+  // First burst: fragment 2 is lost.
+  for (size_t i : {0, 1, 3, 4}) CHECK(add(i) == Result::INCOMPLETE);
+  // The resend completes at fragment 2; fragments 3 and 4 are the tail of that burst.
+  CHECK(add(0) == Result::INCOMPLETE);
+  CHECK(add(1) == Result::INCOMPLETE);
+  CHECK(add(2) == Result::COMPLETE);
+  CHECK(add(3) == Result::DUPLICATE);
+  CHECK(add(4) == Result::DUPLICATE);
+  // The next resend completes on its last fragment, after the host has finished sending.
+  for (size_t i = 0; i < 4; ++i) CHECK(add(i) == Result::INCOMPLETE);
+  CHECK(add(4) == Result::COMPLETE);
+  CHECK(r.sequence() == 7 && std::memcmp(buffer, Message(1021, 4).data(), 1021) == 0);
+  // Another message starts at any fragment, as before.
+  const auto b = Fragments(Message(500, 5), 8, kGfsk);
+  CHECK(r.Add(b[2].data(), static_cast<int>(b[2].size()), kGfsk) == Result::INCOMPLETE);
+  CHECK(r.Add(b[1].data(), static_cast<int>(b[1].size()), kGfsk) == Result::INCOMPLETE);
+  CHECK(r.Add(b[0].data(), static_cast<int>(b[0].size()), kGfsk) == Result::COMPLETE);
+}
+
 void TestPing()
 {
   uint8_t p[16];
@@ -407,6 +437,7 @@ int main()
   TestRoundTrip();
   TestReassemblyRejects();
   TestReassemblyRestart();
+  TestReassemblyResendTail();
   TestPing();
   TestRemoteLease();
   TestAnswerCacheAcrossSessions();

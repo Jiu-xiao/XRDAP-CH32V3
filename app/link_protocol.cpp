@@ -72,6 +72,13 @@ Reassembler::Result Reassembler::Add(const uint8_t* packet, int size, uint8_t fr
   {
     return Result::REJECTED;
   }
+  // The rest of the burst of a message just completed (a resend that completed early)
+  // is dropped: as the start of a new assembly it would complete in the middle of the
+  // next resend, while the host is still transmitting and cannot hear the answer. The
+  // same sequence starts again only with its first fragment.
+  if (done_ && sequence == sequence_ && count == count_ && total == total_ && index != 0U)
+    return Result::DUPLICATE;
+  done_ = false;
   if (mask_ == 0U || sequence != sequence_ || count != count_ || total != total_)
   {
     mask_ = 0;
@@ -83,6 +90,7 @@ Reassembler::Result Reassembler::Add(const uint8_t* packet, int size, uint8_t fr
   mask_ = static_cast<uint16_t>(mask_ | 1U << index);
   if (mask_ != static_cast<uint16_t>((1U << count) - 1U)) return Result::INCOMPLETE;
   mask_ = 0;
+  done_ = true;
   return Result::COMPLETE;
 }
 }  // namespace XrDap::Link
