@@ -124,7 +124,7 @@ macro(xrdap_setup_libraries)
     link_directories(BEFORE "${_dir}")
   endforeach()
   if(CMAKE_C_COMPILER_VERSION VERSION_LESS 15.2)
-    message(FATAL_ERROR "XR-DAP-V307 needs WCH RISC-V GCC 15.2 or newer")
+    message(FATAL_ERROR "XRDAP-CH32V3 needs WCH RISC-V GCC 15.2 or newer")
   endif()
 endmacro()
 

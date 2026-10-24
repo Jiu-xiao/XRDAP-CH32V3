@@ -22,7 +22,7 @@ jobs:
           tools/build.sh evt wdap v305
       - uses: actions/upload-artifact@v4
         with:
-          name: xrdap-ch32v307-${{ github.sha }}
+          name: xrdap-ch32v3-${{ github.sha }}
           path: build/images/
 
   tests:

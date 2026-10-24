@@ -2,7 +2,7 @@ ENTRY( _start )
 
 /* Shared by the bootloader and the application: each passes its own image
    window with -Wl,--defsym=IMAGE_FLASH_BASE=... and IMAGE_FLASH_LENGTH=...
-   (see cmake/ch32v307.cmake). RAM is linked as RAM_SIZE bytes, 64 KB by default,
+   (see cmake/ch32v3.cmake). RAM is linked as RAM_SIZE bytes, 64 KB by default,
    which every CH32V307 FLASH/RAM split from 192K+128K to 256K+64K provides (a board
    on a smaller chip passes its own); the top
    RAM_TOP_RESERVED bytes survive a reset; their use is listed in common/reserved_ram.h. */

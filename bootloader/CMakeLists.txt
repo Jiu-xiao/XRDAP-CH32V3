@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP-V307 USB DFU bootloader. Bare-metal LibXR (no RTOS), runs at 96 MHz.
+# XR-DAP-V307 USB DFU bootloader (evt, wdap). Bare-metal LibXR (no RTOS), runs at 96 MHz.
 get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-include("${XRDAP_ROOT}/cmake/ch32v307.cmake")
+include("${XRDAP_ROOT}/cmake/ch32v3.cmake")
 if(XRDAP_EXTERNAL_BOOTLOADER)
   message(FATAL_ERROR "Board '${XRDAP_BOARD}' keeps another project's bootloader (XRDAP_EXTERNAL_BOOTLOADER)")
 endif()
 
-project(xrdap_v307_bootloader C CXX ASM)
+project(xrdap_ch32v3_bootloader C CXX ASM)
 xrdap_setup_flags(Os)
 xrdap_setup_libraries()
 

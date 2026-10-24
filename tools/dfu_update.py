@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Update the XR-DAP-V307 firmware over USB DFU (no dfu-util needed).
+"""Update the XR-DAP CH32 firmware over USB DFU (no dfu-util needed).
 
 Steps: send DFU DETACH to the running application's DFU runtime interface, which
 restarts the probe into the bootloader (holding the board's boot key while plugging the
@@ -11,7 +11,7 @@ record and starts the new application.
   python tools/dfu_update.py build/app-evt/xrdap.elf.bin
   python tools/dfu_update.py --detach-only
 
-The v305 board keeps the bootloader of XRDAP-CH32V3 (1209:3070), which does not start
+The v305 board keeps its three-stage bootloader (bootloader-ch32v3, 1209:3070), which does not start
 the application by itself; --run-app sends its RUN_APP request (vendor request 0x5A)
 after the download, and --upload reads the image in the application window back first:
 
@@ -35,7 +35,7 @@ BOOTLOADER_ID = (0x1209, 0x3072)
 
 DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
 DFU_DETACH, DFU_DNLOAD, DFU_UPLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 2, 3, 4, 6
-RUN_APP = 0x5A  # XRDAP-CH32V3 bootloader: start the application (vendor, interface)
+RUN_APP = 0x5A  # bootloader-ch32v3: start the application (vendor, interface)
 STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
 OUT = usb.util.CTRL_OUT | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
@@ -205,10 +205,10 @@ def main():
     ap.add_argument("--serial", help="probe serial or its tail")
     ap.add_argument("--detach-only", action="store_true", help="only restart into the bootloader")
     ap.add_argument("--bootloader", default="1209:3072",
-                    help="VID:PID of the bootloader (1209:3070: XRDAP-CH32V3 on v305)")
+                    help="VID:PID of the bootloader (1209:3070: bootloader-ch32v3 on v305)")
     ap.add_argument("--upload", metavar="FILE", help="read the current image back first")
     ap.add_argument("--run-app", action="store_true",
-                    help="send RUN_APP after the download (XRDAP-CH32V3 bootloader)")
+                    help="send RUN_APP after the download (bootloader-ch32v3)")
     args = ap.parse_args()
     global BOOTLOADER_ID
     BOOTLOADER_ID = tuple(int(x, 16) for x in args.bootloader.split(":"))

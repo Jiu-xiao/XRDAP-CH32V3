@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// Flash layout shared by the bootloader and the application (cmake/ch32v307.cmake sets
+// Flash layout shared by the bootloader and the application (cmake/ch32v3.cmake sets
 // the numbers). CPU addresses start at 0; the flash controller sees the same flash at
 // kFlashBase. Inside the application window, from its start:
 //   [0, kConfigOffset)                  application image (DFU payload)
 //   [kConfigOffset, kSealOffset)        settings (app/config.hpp), kept across updates
 //   [kSealOffset, kAppSize)             DFU seal record, written by the bootloader
 //
-// Bootloader 与应用共用的 Flash 布局（数值由 cmake/ch32v307.cmake 给出）。CPU 地址从 0 开
+// Bootloader 与应用共用的 Flash 布局（数值由 cmake/ch32v3.cmake 给出）。CPU 地址从 0 开
 // 始；Flash 控制器在 kFlashBase 处看到同一块 Flash。应用窗口内从头起依次为：应用镜像（DFU
 // 下载内容）、设置区（app/config.hpp，升级时保留）、DFU seal 记录（bootloader 写）。
 

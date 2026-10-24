@@ -1,13 +1,13 @@
 # CH32V305 board (CH32V305FBP6, 12 MHz crystal, the circuit of the WCH-LinkE): the board
-# of XRDAP-CH32V3. Wired only. NOT TESTED ON HARDWARE with this firmware.
+# of the earlier application of this repository (tag legacy-v305-app). Wired only.
 set(XRDAP_HSE_HZ 12000000)
 # The application runs at 216 MHz (12 MHz x 18), ABOVE the rated 144 MHz, as on wdap and
 # for the same reason: bit-banged SWD 1.5x faster (common/
 # sysclk.h). The flash has no wait states to set (code runs from the zero-wait area),
 # settings writes halve HCLK (app/config.cpp SlowBus), and the USBHS PLL runs from the
-# crystal. 144000000 returns to the rated clock, the clock of XRDAP-CH32V3.
+# crystal. 144000000 returns to the rated clock, the clock of the earlier application.
 set(XRDAP_APP_SYSCLK_HZ 216000000)
-# The board keeps the three-stage bootflow of XRDAP-CH32V3: stage-1 trampoline at 0, the
+# The board keeps its three-stage bootflow (bootloader-ch32v3): stage-1 trampoline at 0, the
 # stage-3 DFU bootloader at 0x20000 (USB 1209:3070), the application window
 # 0x2000..0x20000 with the seal in its last 256 bytes, and the boot request mailbox at
 # the top of the 32 KB RAM with the magics "LBBX" "CV30" (custom_bootloader_protocol.h).

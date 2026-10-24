@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP-V307 application: CMSIS-DAP v2 probe on FreeRTOS, linked behind the
+# XR-DAP CH32 application: CMSIS-DAP v2 probe on FreeRTOS, linked behind the
 # bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|v305.
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v307.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v3.cmake")
 
 # Firmware version, reported in DAP_Info: the version below plus the commit it was built
 # from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A build from a copy
 # without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
-project(xrdap_v307 VERSION 0.2.0 LANGUAGES C CXX ASM)
+project(xrdap_ch32v3 VERSION 0.2.0 LANGUAGES C CXX ASM)
 if(NOT DEFINED XRDAP_GIT_REV)
   execute_process(COMMAND git rev-parse --short=7 HEAD
                   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
