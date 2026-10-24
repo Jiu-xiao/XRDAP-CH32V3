@@ -59,13 +59,13 @@ python tools/dfu_update.py xrdap.elf.bin
 | 指示灯 | PC9（与 PA8 合封），低电平点亮 |
 | 上电后保持低电平 | PA5、PB12（目标供电开关） |
 
-板子沿用 XRDAP-CH32V3 的三段式启动：地址 0 的 stage1 跳到 `0x20000` 的 stage3 DFU bootloader（USB `1209:3070`），应用区为 `0x2000`–`0x20000`，最后 256 字节是 seal。本工程不编译这块板子的 bootloader，`tools/build.sh v305` 只产出应用。升级应用只走 DFU，不用 WCH-Link 写整片（会破坏 stage1 和 bootloader）：
+板子沿用 XRDAP-CH32V3 的三段式启动：地址 0 的 stage1 跳到 `0x20000` 的 stage3 DFU bootloader（USB `1209:3070`），应用区为 `0x2000`–`0x20000`，最后 256 字节是 seal。stage1 和 bootloader 的源码在 `bootloader-ch32v3/`（自带它运行时的 libxr 版本，`tools/build.sh v305` 一并编译出 `stage1.bin`、`bootloader.bin`）。空片或 bootloader 损坏时，用 WCH-Link 把 `stage1.bin` 写到 `0x08000000`、`bootloader.bin` 写到 `0x08020000`，应用再经 DFU 写入；平时不要动这两段。升级应用只走 DFU，不用 WCH-Link 写整片（会破坏 stage1 和 bootloader）：
 
 ```
-dfu-util -d 1d50:6199,1209:3070 -a 0 -D xrdap.elf.bin
+python tools/dfu_update.py --bootloader 1209:3070 --run-app xrdap.elf.bin
 ```
 
-dfu-util 先向正在运行的应用发 DFU DETACH（应用写 RAM 顶部 `0x20007FF0` 的信箱后复位），bootloader 停在 DFU 并写入镜像和 seal。板上还是 XRDAP-CH32V3 的旧应用时，`-d` 用 `0d28:2041,1209:3070`。XRDAP-CH32V3 的 bootloader 默认不自动启动应用：上电和复位后停在 DFU，要用 XRDAP-CH32V3 的 `tools/ch32_usb_run_app.py`（厂商请求 `0x5A`）启动应用。上电时按住 IAP 键（PC7）也停在 DFU。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
+`dfu_update.py` 先向正在运行的应用发 DFU DETACH（应用写 RAM 顶部 `0x20007FF0` 的信箱后复位），bootloader 停在 DFU 并写入镜像和 seal，最后发 RUN_APP（厂商请求 `0x5A`）启动应用：这个 bootloader 默认不自动启动应用，上电和复位后都停在 DFU，要再发一次 RUN_APP：`python tools/dfu_update.py --bootloader 1209:3070 --run-app`（不带镜像，只启动应用）。`--upload 文件` 在写入前把应用区里原来的镜像读出来保存。板上还是 XRDAP-CH32V3 的旧应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，可按住 IAP 键（PC7）上电让 bootloader 停在 DFU，或用 `dfu-util -d 0d28:2041,1209:3070 -a 0 -D xrdap.elf.bin` 再 `--run-app`。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
 指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（XRDAP-CH32V3 的应用为 144 MHz）；`boards/v305.cmake` 的 `XRDAP_APP_SYSCLK_HZ` 改为 `144000000` 即回到标称频率。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
 

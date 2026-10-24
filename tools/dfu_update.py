@@ -16,6 +16,7 @@ the application by itself; --run-app sends its RUN_APP request (vendor request 0
 after the download, and --upload reads the image in the application window back first:
 
   python tools/dfu_update.py --bootloader 1209:3070 --upload old.bin --run-app xrdap.elf.bin
+  python tools/dfu_update.py --bootloader 1209:3070 --run-app   (start it only)
 
 Needs pyusb and libusb-package (pip install pyusb libusb-package). On Windows the
 probe announces WinUSB, so no driver installation is required.
@@ -215,6 +216,11 @@ def main():
     if args.detach_only:
         ok = wait_for(BOOTLOADER_ID, args.serial, 10) is not None
         print("bootloader running" if ok else "bootloader did not appear")
+        return 0 if ok else 1
+    if not args.image and args.run_app:
+        run_app(args.serial)  # only start the application already in the window
+        ok = wait_for(APP_ID, args.serial, 10) is not None
+        print("application running" if ok else "application did not appear")
         return 0 if ok else 1
     if not args.image:
         ap.error("image is required")
