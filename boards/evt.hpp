@@ -14,6 +14,10 @@ namespace XrDap::Board
 {
 /// 板名，进入 DAP_Info / Board name reported in DAP_Info.
 inline constexpr char kName[] = "CH32V307-EVT";
+/// 产品名（DAP_Info 0x02）和 USB 产品字符串，按芯片 / Product name (DAP_Info 0x02) and
+/// USB product string, by chip.
+inline constexpr char kProductName[] = "XR-DAP-V307";
+inline constexpr char kUsbProductName[] = "XR-DAP-V307 CMSIS-DAP";
 
 /// 上电时按住进入 bootloader，低电平有效，内部上拉 / Held at power-up to stay in the
 /// bootloader; active low with the internal pull-up.

@@ -49,7 +49,7 @@ python tools/dfu_update.py xrdap.elf.bin
 
 ### CH32V305 板（v305，本固件尚未在硬件上验证）
 
-`v305` 是 [XRDAP-CH32V3](https://github.com/Jiu-xiao/XRDAP-CH32V3) 用的 CH32V305 板（CH32V305FBP6、12 MHz 晶振，电路与 WCH-LinkE 相同）。本固件在它上面只做有线 USB 高速 DAP，没有射频，引脚与 XRDAP-CH32V3 的应用相同：
+`v305` 是 [XRDAP-CH32V3](https://github.com/Jiu-xiao/XRDAP-CH32V3) 用的 CH32V305 板（CH32V305FBP6、12 MHz 晶振，电路与 WCH-LinkE 相同）。本固件在它上面只做有线 USB 高速 DAP，没有射频，产品名 `XR-DAP-V305`（USB 产品字符串 `XR-DAP-V305 CMSIS-DAP`，USB 标识与全系列相同），引脚与 XRDAP-CH32V3 的应用相同：
 
 | 用途 | 引脚 |
 |---|---|

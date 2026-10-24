@@ -49,7 +49,7 @@ TIM1_CH3N (PB15) PWM with DMA drives the chain, with the high time of each bit s
 
 ### CH32V305 board (v305, this firmware not yet verified on hardware)
 
-`v305` is the CH32V305 board of [XRDAP-CH32V3](https://github.com/Jiu-xiao/XRDAP-CH32V3) (CH32V305FBP6, 12 MHz crystal, the circuit of the WCH-LinkE). On it this firmware is a wired USB high-speed DAP only, without radio, with the pins of the XRDAP-CH32V3 application:
+`v305` is the CH32V305 board of [XRDAP-CH32V3](https://github.com/Jiu-xiao/XRDAP-CH32V3) (CH32V305FBP6, 12 MHz crystal, the circuit of the WCH-LinkE). On it this firmware is a wired USB high-speed DAP only, without radio, with the product name `XR-DAP-V305` (USB product string `XR-DAP-V305 CMSIS-DAP`, USB ids of the family), and with the pins of the XRDAP-CH32V3 application:
 
 | Function | Pin |
 |---|---|

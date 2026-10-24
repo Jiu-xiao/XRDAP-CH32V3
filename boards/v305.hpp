@@ -26,6 +26,10 @@ namespace XrDap::Board
 {
 /// 板名，进入 DAP_Info / Board name reported in DAP_Info.
 inline constexpr char kName[] = "CH32V305-LINKE";
+/// 产品名（DAP_Info 0x02）和 USB 产品字符串，按芯片 / Product name (DAP_Info 0x02) and
+/// USB product string, by chip.
+inline constexpr char kProductName[] = "XR-DAP-V305";
+inline constexpr char kUsbProductName[] = "XR-DAP-V305 CMSIS-DAP";
 
 /// IAP 键：上电时按住，XRDAP-CH32V3 的 bootloader 停在 DFU；低电平有效 / IAP key: held
 /// at power-up, the XRDAP-CH32V3 bootloader stays in DFU; active low.
@@ -50,17 +54,17 @@ inline constexpr BoardPin kNreset{kPortC, 8};
 inline constexpr BoardPin kPowerEnable3v3{kPortA, 5};
 inline constexpr BoardPin kPowerEnable5v{kPortB, 12};
 
-/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10），在本板 216 MHz
-/// 下用 SysTick 周期计数扫描测得（F302CB 目标）：每个延时次数 N 每周期 6.0 个周期（N >= 16
-/// 精确），N = 1..32 拟合 a = 25..27、b = 6.3..6.4，即 wdap 的 {63, 259}；不加延时路径每
-/// 周期 11.45（写）、12.74（读）、14.13（SWJ 序列）个周期，c 取最快的写路径，不加延时路径
-/// 只在不比请求快时才用 / SWD bit-bang timing (b, a, c of LibXR SwdGpioTiming, cycles x10),
-/// measured on this board at 216 MHz with a SysTick cycle sweep (F302CB target):
-/// 6.0 cycles per SWCLK for each delay step N (exact for N >= 16), fit over
-/// N = 1..32 a = 25..27, b = 6.3..6.4, i.e. wdap's {63, 259}; the undelayed path costs
-/// 11.45 (write), 12.74 (read) and 14.13 (SWJ sequence) cycles per SWCLK, and c is the
-/// fastest, the write path, so the undelayed path is used only where it is not faster
-/// than requested.
+/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10），在本板
+/// 216 MHz 下用 SysTick 周期计数扫描测得（F302CB 目标）：每个延时次数 N 每周期
+/// 6.0 个周期（N >= 16 精确），N = 1..32 拟合 a = 25..27、b = 6.3..6.4，即 wdap 的
+/// {63, 259}；不加延时路径每周期 11.45（写）、12.74（读）、14.13（SWJ 序列）个周期，
+/// c 取最快的写路径，不加延时路径只在不比请求快时才用 / SWD bit-bang timing (b, a, c of
+/// LibXR SwdGpioTiming, cycles x10), measured on this board at 216 MHz with a SysTick
+/// cycle sweep (F302CB target): 6.0 cycles per SWCLK for each delay step N
+/// (exact for N >= 16), fit over N = 1..32 a = 25..27, b = 6.3..6.4, i.e. wdap's {63,
+/// 259}; the undelayed path costs 11.45 (write), 12.74 (read) and 14.13 (SWJ sequence)
+/// cycles per SWCLK, and c is the fastest, the write path, so the undelayed path is used
+/// only where it is not faster than requested.
 inline constexpr uint32_t kSwdStepX10 = 63;
 inline constexpr uint32_t kSwdInterceptX10 = 259;
 inline constexpr uint32_t kSwdFastX10 = 114;

@@ -15,6 +15,10 @@
 namespace XrDap::Board
 {
 inline constexpr char kName[] = "XR-DAP-WDAP";
+/// 产品名（DAP_Info 0x02）和 USB 产品字符串，按芯片 / Product name (DAP_Info 0x02) and
+/// USB product string, by chip.
+inline constexpr char kProductName[] = "XR-DAP-V307";
+inline constexpr char kUsbProductName[] = "XR-DAP-V307 CMSIS-DAP";
 
 /// KEY2（SW2 接地），低电平有效，内部上拉 / KEY2 (SW2 to GND), active low, internal
 /// pull-up.
