@@ -18,6 +18,10 @@ inline constexpr char kName[] = "CH32V307-EVT";
 /// USB product string, by chip.
 inline constexpr char kProductName[] = "XR-DAP-V307";
 inline constexpr char kUsbProductName[] = "XR-DAP-V307 CMSIS-DAP";
+/// USB bcdDevice，每种板子一个（XRDAP-Core Family::kBcdCh32V307）/ USB bcdDevice, one
+/// per board (XRDAP-Core Family::kBcdCh32V307): Windows caches descriptors by VID, PID
+/// and bcdDevice.
+inline constexpr uint16_t kUsbBcd = 0x0300;
 
 /// 上电时按住进入 bootloader，低电平有效，内部上拉 / Held at power-up to stay in the
 /// bootloader; active low with the internal pull-up.

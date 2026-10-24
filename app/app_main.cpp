@@ -170,10 +170,9 @@ extern "C" void app_main()
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, kVendorName, kUsbProductName,
       kSerialPrefix);
-  static LibXR::CH32USBOtgHS usb({{ep0_buffer}, {ep1_dap_out}},
-                                 {{ep0_buffer}, {ep1_dap_in}}, Family::kUsbVid,
-                                 Family::kUsbPid, Family::kBcdCh32V307, {&kStrings},
-                                 {{&dap, &dfu}}, {ChipUid(), kChipUidSize});
+  static LibXR::CH32USBOtgHS usb(
+      {{ep0_buffer}, {ep1_dap_out}}, {{ep0_buffer}, {ep1_dap_in}}, Family::kUsbVid,
+      Family::kUsbPid, kUsbBcd, {&kStrings}, {{&dap, &dfu}}, {ChipUid(), kChipUidSize});
   usb.Init(false);
   usb.Start(false);
 

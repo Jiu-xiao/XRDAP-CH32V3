@@ -30,6 +30,10 @@ inline constexpr char kName[] = "CH32V305-LINKE";
 /// USB product string, by chip.
 inline constexpr char kProductName[] = "XR-DAP-V305";
 inline constexpr char kUsbProductName[] = "XR-DAP-V305 CMSIS-DAP";
+/// USB bcdDevice，每种板子一个（XRDAP-Core Family::kBcdCh32V305）/ USB bcdDevice, one
+/// per board (XRDAP-Core Family::kBcdCh32V305): Windows caches descriptors by VID, PID
+/// and bcdDevice.
+inline constexpr uint16_t kUsbBcd = 0x0600;
 
 /// IAP 键：上电时按住，XRDAP-CH32V3 的 bootloader 停在 DFU；低电平有效 / IAP key: held
 /// at power-up, the XRDAP-CH32V3 bootloader stays in DFU; active low.
