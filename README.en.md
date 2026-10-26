@@ -136,7 +136,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-The images are `build/bootloader-evt/bootloader.elf.bin` and `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap` builds the bootloader and the application for both boards and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
+The images are `build/bootloader-evt/bootloader.elf.bin` and `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap v305` builds the bootloader and the application for the three boards (for v305 the stage 1 and the bootloader of `bootloader-ch32v3/`) and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
 
 The link protocol, the session rules, the pair identity, DAP forwarding, the settings log and the flash layout are pure logic without hardware and are tested on the build machine (CI runs them too):
 

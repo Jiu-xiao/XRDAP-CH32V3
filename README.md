@@ -136,7 +136,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-产物为 `build/bootloader-evt/bootloader.elf.bin` 和 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap` 一次编译两种板子的 bootloader 和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
+产物为 `build/bootloader-evt/bootloader.elf.bin` 和 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap v305` 一次编译三种板子的 bootloader 和应用（v305 为 `bootloader-ch32v3/` 的 stage1 和 bootloader），镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
 
 链路协议、会话规则、配对身份、DAP 转发、设置日志和 Flash 布局是不依赖硬件的纯逻辑，在编译机上测试（CI 也运行）：
 
