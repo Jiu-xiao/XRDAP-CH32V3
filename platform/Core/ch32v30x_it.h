@@ -12,6 +12,6 @@
 #ifndef __CH32V30x_IT_H
 #define __CH32V30x_IT_H
 
-#endif /* __CH32V30x_IT_H */
-
 #include "ch32v30x.h"
+
+#endif /* __CH32V30x_IT_H */
