@@ -212,6 +212,9 @@ def main():
     args = ap.parse_args()
     global BOOTLOADER_ID
     BOOTLOADER_ID = tuple(int(x, 16) for x in args.bootloader.split(":"))
+    # Check the arguments before the DETACH, which leaves the probe in the bootloader.
+    if not args.image and not args.detach_only and not args.run_app:
+        ap.error("image is required")
     detach(args.serial)
     if args.detach_only:
         ok = wait_for(BOOTLOADER_ID, args.serial, 10) is not None
@@ -222,8 +225,6 @@ def main():
         ok = wait_for(APP_ID, args.serial, 10) is not None
         print("application running" if ok else "application did not appear")
         return 0 if ok else 1
-    if not args.image:
-        ap.error("image is required")
     if args.upload:
         upload(args.upload, args.serial)
     download(args.image, args.serial)
