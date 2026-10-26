@@ -6,6 +6,8 @@
 /*
  * SRAM boot-request mailbox.
  * Kept in top RAM area so it survives NVIC_SystemReset and avoids .bss/.data.
+ * CH32V305 (32 KB RAM, board v305): the application reaches the same words through
+ * common/reserved_ram.h with XRDAP_RAM_SIZE 0x8000 and these magics (boards/v305.cmake).
  */
 #define CH32_CUSTOM_BL_REQ_ADDR0 0x20007FF0u
 #define CH32_CUSTOM_BL_REQ_ADDR1 0x20007FF4u
