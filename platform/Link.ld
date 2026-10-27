@@ -1,0 +1,191 @@
+ENTRY( _start )
+
+/* Shared by the bootloader and the application: each passes its own image
+   window with -Wl,--defsym=IMAGE_FLASH_BASE=... and IMAGE_FLASH_LENGTH=...
+   (see cmake/ch32v3.cmake). RAM is linked as RAM_SIZE bytes, 64 KB by default,
+   which every CH32V307 FLASH/RAM split from 192K+128K to 256K+64K provides (a board
+   on a smaller chip passes its own); the top
+   RAM_TOP_RESERVED bytes survive a reset; their use is listed in common/reserved_ram.h. */
+
+__stack_size = DEFINED(STACK_SIZE) ? STACK_SIZE : 4096;
+__heap_size = DEFINED(HEAP_SIZE) ? HEAP_SIZE : 8192;
+__ram_top_reserved = DEFINED(RAM_TOP_RESERVED) ? RAM_TOP_RESERVED : 0x100;
+__ram_size = DEFINED(RAM_SIZE) ? RAM_SIZE : 64K;
+
+PROVIDE( _stack_size = __stack_size );
+PROVIDE( _heap_size = __heap_size );
+PROVIDE( _ram_top_reserved = __ram_top_reserved );
+
+MEMORY
+{
+	FLASH (rx) : ORIGIN = IMAGE_FLASH_BASE, LENGTH = IMAGE_FLASH_LENGTH
+	RAM (xrw) : ORIGIN = 0x20000000, LENGTH = (__ram_size - __ram_top_reserved)
+}
+
+SECTIONS
+{
+
+	.init :
+	{
+		_sinit = .;
+		. = ALIGN(4);
+		KEEP(*(SORT_NONE(.init)))
+		. = ALIGN(4);
+		_einit = .;
+	} >FLASH AT>FLASH
+
+  .vector :
+  {
+      *(.vector);
+	  . = ALIGN(64);
+  } >FLASH AT>FLASH
+
+	.text :
+	{
+		. = ALIGN(4);
+		*(.text)
+		*(.text.*)
+		*(.rodata)
+		*(.rodata*)
+		*(.gnu.linkonce.t.*)
+		. = ALIGN(4);
+	} >FLASH AT>FLASH 
+
+	.fini (READONLY) :
+	{
+		KEEP(*(SORT_NONE(.fini)))
+		. = ALIGN(4);
+	} >FLASH AT>FLASH
+
+	PROVIDE( _etext = . );
+	PROVIDE( _eitcm = . );	
+
+	.preinit_array (READONLY) :
+	{
+	  PROVIDE_HIDDEN (__preinit_array_start = .);
+	  KEEP (*(.preinit_array))
+	  PROVIDE_HIDDEN (__preinit_array_end = .);
+	} >FLASH AT>FLASH 
+	
+	.init_array (READONLY) :
+	{
+	  PROVIDE_HIDDEN (__init_array_start = .);
+	  KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+	  KEEP (*(.init_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
+	  PROVIDE_HIDDEN (__init_array_end = .);
+	} >FLASH AT>FLASH 
+	
+	.fini_array (READONLY) :
+	{
+	  PROVIDE_HIDDEN (__fini_array_start = .);
+	  KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
+	  KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
+	  PROVIDE_HIDDEN (__fini_array_end = .);
+	} >FLASH AT>FLASH 
+	
+	.ctors (READONLY) :
+	{
+	  /* gcc uses crtbegin.o to find the start of
+	     the constructors, so we make sure it is
+	     first.  Because this is a wildcard, it
+	     doesn't matter if the user does not
+	     actually link against crtbegin.o; the
+	     linker won't look for a file to match a
+	     wildcard.  The wildcard also means that it
+	     doesn't matter which directory crtbegin.o
+	     is in.  */
+	  KEEP (*crtbegin.o(.ctors))
+	  KEEP (*crtbegin?.o(.ctors))
+	  /* We don't want to include the .ctor section from
+	     the crtend.o file until after the sorted ctors.
+	     The .ctor section from the crtend file contains the
+	     end of ctors marker and it must be last */
+	  KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
+	  KEEP (*(SORT(.ctors.*)))
+	  KEEP (*(.ctors))
+	} >FLASH AT>FLASH 
+	
+	.dtors (READONLY) :
+	{
+	  KEEP (*crtbegin.o(.dtors))
+	  KEEP (*crtbegin?.o(.dtors))
+	  KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .dtors))
+	  KEEP (*(SORT(.dtors.*)))
+	  KEEP (*(.dtors))
+	} >FLASH AT>FLASH 
+
+	.ramfunc :
+	{
+		. = ALIGN(4);
+		PROVIDE(_ramfunc_vma = .);
+		*(.ramfunc .ramfunc.*)
+		. = ALIGN(4);
+		PROVIDE(_eramfunc = .);
+	} >RAM AT>FLASH
+	PROVIDE(_ramfunc_lma = LOADADDR(.ramfunc));
+
+	.dalign :
+	{
+		. = ALIGN(4);
+		PROVIDE(_data_vma = .);
+	} >RAM AT>FLASH	
+
+	.dlalign :
+	{
+		. = ALIGN(4); 
+		PROVIDE(_data_lma = .);
+	} >FLASH AT>FLASH
+
+	.data :
+	{
+    	*(.gnu.linkonce.r.*)
+    	*(.data .data.*)
+		*(.gnu.linkonce.d.*)
+		. = ALIGN(8);
+    	PROVIDE( __global_pointer$ = . + 0x800 );
+    	*(.sdata .sdata.*)
+		*(.sdata2.*)
+    	*(.gnu.linkonce.s.*)
+    	. = ALIGN(8);
+    	*(.srodata.cst16)
+    	*(.srodata.cst8)
+    	*(.srodata.cst4)
+    	*(.srodata.cst2)
+    	*(.srodata .srodata.*)
+    	. = ALIGN(4);
+		PROVIDE( _edata = .);
+	} >RAM AT>FLASH
+
+	.bss :
+	{
+		. = ALIGN(4);
+		PROVIDE( _sbss = .);
+  	    *(.sbss*)
+        *(.gnu.linkonce.sb.*)
+		*(.bss*)
+     	*(.gnu.linkonce.b.*)		
+		*(COMMON*)
+		. = ALIGN(4);
+		PROVIDE( _ebss = .);
+	} >RAM AT>FLASH
+
+	PROVIDE( _end = _ebss);
+	PROVIDE( end = . );
+
+    .stack :
+    {
+        . = ALIGN(8);
+        PROVIDE( _heap_start = . );
+        . = . + __heap_size;
+        PROVIDE( _heap_end = . );
+
+        . = ALIGN(8);
+        PROVIDE(_susrstack = . );
+        . = . + __stack_size;
+        PROVIDE( _eusrstack = .);
+    } >RAM 
+
+}
+
+
+

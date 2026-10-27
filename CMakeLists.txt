@@ -1,134 +1,90 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_VERSION 1)
+# XR-DAP CH32 application: CMSIS-DAP v2 probe on FreeRTOS, linked behind the
+# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|v305.
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v3.cmake")
 
-# Standard settings
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS ON)
+# Firmware version, reported in DAP_Info: the version below plus the commit it was built
+# from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A build from a copy
+# without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
+project(xrdap_ch32v3 VERSION 0.2.0 LANGUAGES C CXX ASM)
+if(NOT DEFINED XRDAP_GIT_REV)
+  execute_process(COMMAND git rev-parse --short=7 HEAD
+                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                  OUTPUT_VARIABLE XRDAP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET RESULT_VARIABLE _git_result)
+  if(_git_result EQUAL 0)
+    execute_process(COMMAND git status --porcelain --untracked-files=no
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE _git_dirty OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if(_git_dirty)
+      string(APPEND XRDAP_GIT_REV ".dirty")
+    endif()
+  else()
+    set(XRDAP_GIT_REV "")
+  endif()
+endif()
+set(XRDAP_FIRMWARE_VERSION "${PROJECT_VERSION}")
+if(XRDAP_GIT_REV)
+  string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
+endif()
+message(STATUS "XR-DAP firmware version ${XRDAP_FIRMWARE_VERSION}")
+xrdap_setup_flags(O2)
+xrdap_setup_libraries()
 
-# Toolchain
-set(COMPILER_PREFIX "riscv32-unknown-elf-")
-set(CMAKE_C_COMPILER ${COMPILER_PREFIX}gcc)
-set(CMAKE_CXX_COMPILER ${COMPILER_PREFIX}g++)
-set(CMAKE_ASM_COMPILER ${COMPILER_PREFIX}gcc)
-set(CMAKE_LINKER ${COMPILER_PREFIX}gcc)
-set(CMAKE_AR ${COMPILER_PREFIX}ar)
-set(CMAKE_OBJCOPY ${COMPILER_PREFIX}objcopy)
-set(CMAKE_OBJDUMP ${COMPILER_PREFIX}objdump)
-set(SIZE ${COMPILER_PREFIX}size)
+xrdap_add_platform_library()
 
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/build)
+set(FREERTOS_DIR "${XRDAP_PLATFORM_DIR}/FreeRTOS")
+set(FREERTOS_INCLUDES
+    "${FREERTOS_DIR}/include"
+    "${FREERTOS_DIR}/portable/GCC/RISC-V"
+    "${FREERTOS_DIR}/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions")
+file(GLOB FREERTOS_SOURCES "${FREERTOS_DIR}/*.c" "${FREERTOS_DIR}/portable/GCC/RISC-V/*.c")
+add_library(freertos OBJECT ${FREERTOS_SOURCES}
+            "${FREERTOS_DIR}/portable/MemMang/heap_4.c"
+            "${FREERTOS_DIR}/portable/GCC/RISC-V/portASM.S")
+target_include_directories(freertos PUBLIC ${FREERTOS_INCLUDES} ${XRDAP_PLATFORM_INCLUDES})
+target_compile_definitions(freertos PUBLIC ${XRDAP_COMMON_DEFINES})
 
-project(CH32V307VC)
-
-# Enable languages
-enable_language(C CXX ASM)
-
-# Flags
-set(CPU_FLAGS "-march=rv32imacf_zicsr_zifencei -mabi=ilp32f -msmall-data-limit=8 -mno-save-restore")
-set(COMMON_FLAGS "-Wall -Wextra -fno-builtin -ffunction-sections -fdata-sections -fsigned-char -fsingle-precision-constant -Wunused -Wuninitialized")
-
-set(CMAKE_C_FLAGS "${CPU_FLAGS} ${COMMON_FLAGS} -fmessage-length=0" CACHE INTERNAL "" FORCE)
-set(CMAKE_CXX_FLAGS "${CPU_FLAGS} ${COMMON_FLAGS} -fno-use-cxa-atexit -fno-exceptions -fno-rtti -fno-threadsafe-statics" CACHE INTERNAL "" FORCE)
-set(CMAKE_ASM_FLAGS "${CPU_FLAGS} -x assembler-with-cpp" CACHE INTERNAL "" FORCE)
-
-add_compile_options(-g)
-
-# Link options
-add_link_options(
-  -nostartfiles
-  -Xlinker --gc-sections
-  -Wl,--print-memory-usage
-  -Wl,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map
-  --specs=nano.specs
-  --specs=nosys.specs
-  -march=rv32imacf_zicsr_zifencei
-  -mabi=ilp32f
-  -flto
-  -lm -lc
-)
-
-# Linker script
-set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/Link.ld)
-
-# Main executable
-add_executable(${PROJECT_NAME}.elf)
-
-target_link_options(${PROJECT_NAME}.elf PRIVATE -T ${LINKER_SCRIPT})
-target_compile_options(${PROJECT_NAME}.elf PRIVATE -Og)
-
-# Source files
-file(GLOB CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c")
-file(GLOB USER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/User/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/User/*.cpp")
-
-target_sources(${PROJECT_NAME}.elf
-  PRIVATE
-    ${CORE_SOURCES}
-    ${USER_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/startup_ch32v30x_D8C.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/portASM.S
-)
-
-# Includes
-target_include_directories(${PROJECT_NAME}.elf PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/Core
-  ${CMAKE_CURRENT_SOURCE_DIR}/User
-  ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
-)
-
-# Peripheral + FreeRTOS object library
-file(GLOB PERIPHERAL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c")
-file(GLOB FREERTOS_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/*.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/*.c"
-  "${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang/heap_4.c"
-)
-
-add_library(Peripheral OBJECT ${PERIPHERAL_SOURCES} ${FREERTOS_SOURCES})
-
-target_include_directories(Peripheral PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/Core
-  ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/Common
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
-)
-
-target_compile_options(Peripheral PUBLIC -Og)
-target_link_libraries(${PROJECT_NAME}.elf PRIVATE Peripheral)
-
-# LibXR
 set(LIBXR_SYSTEM FreeRTOS)
 set(LIBXR_DRIVER ch)
 set(LIBXR_CH32_CONFIG_FILE ch32v30x_conf.h)
 add_subdirectory(libxr)
+target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES} ${FREERTOS_INCLUDES})
+target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
-target_link_libraries(${PROJECT_NAME}.elf PUBLIC xr)
-
-target_include_directories(xr PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/Core
-  ${CMAKE_CURRENT_SOURCE_DIR}/User
-  ${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/Common
-  ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS/portable/MemMang
-)
-
-target_compile_options(xr PRIVATE -Og)
-# Output binary and hex
-set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
-set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
-
-add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-  COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${HEX_FILE}
-  COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
-  COMMENT "Building ${HEX_FILE}\nBuilding ${BIN_FILE}"
-)
+add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
+                         app/settings_log.cpp app/sampler_task.cpp common/sysclk.c)
+target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
+                           XRDAP_APP_STACK_WORDS=${XRDAP_APP_STACK_WORDS}
+                           XRDAP_DAP_PACKET_COUNT=${XRDAP_DAP_PACKET_COUNT}
+                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES})
+# XRDAP-Core: session owner and command executor, XR vendor extension, status light
+# rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
+include(xrdap-core/xrdap_core.cmake)
+target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
+target_include_directories(xrdap.elf PRIVATE app ${XRDAP_CORE_INCLUDE_DIRS})
+target_compile_definitions(xrdap.elf PRIVATE XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
+if(XRDAP_HAS_RADIO)
+  # Role and modulation are settings in flash (app/config.hpp); one image serves both
+  # ends of the link.
+  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/link_protocol.cpp app/link_session.cpp
+                                   app/link_transport.cpp app/dap_forwarding.cpp
+                                   app/dap_session.cpp app/pair_identity.cpp
+                                   app/radio_command.cpp app/pairing.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO)
+endif()
+if(XRDAP_HAS_STATUS_LIGHTS)
+  target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LIGHTS)
+endif()
+if(XRDAP_HAS_STATUS_LED)
+  target_sources(xrdap.elf PRIVATE app/status_led.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LED)
+endif()
+target_link_libraries(xrdap.elf PRIVATE platform freertos xr)
+# The image stops in front of the settings and the seal.
+math(EXPR XRDAP_APP_IMAGE_SIZE "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}"
+     OUTPUT_FORMAT HEXADECIMAL)
+xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_IMAGE_SIZE} ${XRDAP_C_HEAP_SIZE})
