@@ -118,7 +118,8 @@ extern "C" void app_main()
   // XRDAP-Core: the probe is used over one link at a time (USB, or the radio peer on a
   // remote), every DAP command goes through the executor, and the XR vendor extension
   // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset
-  // lapses a connection on USB. The sampling task outranks the DAP loop (priority 3).
+  // lapses a connection on USB. The main loop is the execution context: it runs USB commands,
+  // the radio peer's commands and sampling one after the other.
   static DapVendor vendor(swd);
   vendor.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
   static DapActivity activity;
@@ -141,7 +142,7 @@ extern "C" void app_main()
       +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
       {
         uint16_t size = 0;
-        exec.Execute(Transport::RADIO, req, req_len, resp, resp_cap, size);
+        exec.ExecuteHere(Transport::RADIO, req, req_len, resp, resp_cap, size);
         return size;
       },
       +[]() { exec.LinkLost(Transport::RADIO); });
@@ -172,16 +173,15 @@ extern "C" void app_main()
   usb.Init(false);
   usb.Start(false);
 
-  // StepUsb() waits up to kStepWaitMs for a USB command (libxr WaitForWork, without
-  // holding the executor's turn) and then runs it, so a DFU DETACH is carried out from
-  // the same loop soon after its advertised timeout, and the status LED is drawn at
-  // least every kStepWaitMs. With the radio in use the loop does
-  // not wait: it serves the radio between USB commands and watches KEY2 for pairing.
+  // Run() waits up to kStepWaitMs when it has nothing to do (a USB command or the tick
+  // interrupt wakes it), so a DFU DETACH is carried out from the same loop soon after its
+  // advertised timeout, and the status LED is drawn at least every kStepWaitMs. With the radio
+  // in use the loop does not wait: it serves the radio between USB commands and watches KEY2
+  // for pairing.
   constexpr uint32_t kStepWaitMs = 10;
   for (;;)
   {
     BootGuardFeed();
-    vendor.Poll(sampler_timer);
 #ifdef XRDAP_HAS_STATUS_LIGHTS
     StatusLightsPoll();
 #endif
@@ -191,12 +191,12 @@ extern "C" void app_main()
     if (DapSessionRadioInUse())
     {
       DapSessionService();
-      (void)exec.StepUsb(0);
+      exec.Run(sampler_timer, 0);
       dfu.Process();
       continue;
     }
 #endif
-    (void)exec.StepUsb(vendor.Sampling() ? 0 : kStepWaitMs);
+    exec.Run(sampler_timer, kStepWaitMs);
     dfu.Process();
 #ifdef XRDAP_HAS_STATUS_LED
     StatusLedUpdate();
