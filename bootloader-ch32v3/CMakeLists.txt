@@ -60,11 +60,12 @@ add_link_options(-nostartfiles -Xlinker --gc-sections -Wl,--print-memory-usage
                  --specs=nano.specs --specs=nosys.specs -march=rv32imafc_xw -mabi=ilp32f
                  -flto -lm -lc)
 
-# The board's Core files and one peripheral header (2- vs 4-level interrupt nesting) of
-# this bootloader; startup, syscalls and the peripheral library are shared with the
-# application.
+# This bootloader's own configuration, interrupt handlers and one peripheral header (2- vs
+# 4-level interrupt nesting); the WCH core and system files, startup, syscalls and the
+# peripheral library are shared with the application. Its own directory comes first so its
+# ch32v30x_conf.h and ch32v30x_it.h win over the application's.
 set(INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/core"
-             "${CMAKE_CURRENT_SOURCE_DIR}" "${PLATFORM}/Peripheral/inc")
+             "${CMAKE_CURRENT_SOURCE_DIR}" "${PLATFORM}/Core" "${PLATFORM}/Peripheral/inc")
 file(GLOB PERIPHERAL_SOURCES "${PLATFORM}/Peripheral/src/*.c")
 add_library(peripheral OBJECT ${PERIPHERAL_SOURCES})
 target_compile_definitions(peripheral PUBLIC CH32V30x_D8C)
@@ -91,7 +92,8 @@ target_compile_definitions(stage1 PRIVATE CH32_STAGE3_BL_BASE=${XRDAP_V3_BL_BASE
 xrdap_v3_image(stage1)
 
 file(GLOB CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/core/*.c")
-add_executable(bootloader ${CORE_SOURCES} boot_main.c bootloader_main.cpp
+add_executable(bootloader ${CORE_SOURCES} "${PLATFORM}/Core/core_riscv.c"
+               "${PLATFORM}/Core/system_ch32v30x.c" boot_main.c bootloader_main.cpp
                "${PLATFORM}/syscalls.c" "${PLATFORM}/startup_ch32v30x_D8C.S")
 target_include_directories(bootloader PRIVATE ${INCLUDES})
 target_link_options(bootloader PRIVATE
