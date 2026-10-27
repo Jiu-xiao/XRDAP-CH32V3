@@ -30,6 +30,9 @@ using SamplerPolicy = Vendor::LoopSampling;
 /// USB 和无线远端两条传输 / Two transports: USB and the radio peer.
 using TransportPolicy = Session::MultiTransport;
 
+/// USB 和无线远端两条传输 / Two transports: USB and the radio peer.
+using TransportPolicy = Session::MultiTransport;
+
 /// 采样帧缓冲字节数，2 的幂，INFO 会报告 / Sample frame buffer size, a power of two,
 /// reported by INFO.
 inline constexpr uint32_t kRingBytes = XRDAP_RING_BYTES;  // per board (cmake)
