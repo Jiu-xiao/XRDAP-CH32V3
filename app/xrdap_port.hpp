@@ -13,8 +13,16 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+namespace XrDap::Vendor
+{
+class TaskSampling;
+}  // namespace XrDap::Vendor
+
 namespace XrDap::Port
 {
+/// 采样在 RTOS 任务里 / Sampling runs in an RTOS task.
+using SamplerPolicy = Vendor::TaskSampling;
+
 /// 采样帧缓冲字节数，2 的幂，INFO 会报告 / Sample frame buffer size, a power of two,
 /// reported by INFO.
 inline constexpr uint32_t kRingBytes = XRDAP_RING_BYTES;  // per board (cmake)
