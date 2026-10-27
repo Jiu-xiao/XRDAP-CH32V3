@@ -18,10 +18,18 @@ namespace XrDap::Vendor
 class TaskSampling;
 }  // namespace XrDap::Vendor
 
+namespace XrDap::Session
+{
+class MultiTransport;
+}  // namespace XrDap::Session
+
 namespace XrDap::Port
 {
 /// 采样在 RTOS 任务里 / Sampling runs in an RTOS task.
 using SamplerPolicy = Vendor::TaskSampling;
+
+/// USB 和无线远端两条传输 / Two transports: USB and the radio peer.
+using TransportPolicy = Session::MultiTransport;
 
 /// 采样帧缓冲字节数，2 的幂，INFO 会报告 / Sample frame buffer size, a power of two,
 /// reported by INFO.
