@@ -15,7 +15,7 @@
 #include <string_view>
 
 #include XRDAP_BOARD_HEADER
-#include "xrdap/probe/chip_uid.hpp"
+#include "chip_uid.hpp"
 #include "xrdap/probe/family.hpp"
 #include "xrdap/probe/probe_identity.hpp"
 
@@ -41,8 +41,4 @@ static_assert(kUsbBcd == Family::kBcdCh32V307 || kUsbBcd == Family::kBcdCh32V305
               "the board's bcdDevice must be one of the CH32 values of XRDAP-Core");
 static_assert(IsUsbProductName(kUsbProductName, kProductName),
               "the board's USB product string must be its product name + \" CMSIS-DAP\"");
-
-/// 芯片 UID / The chip UID.
-inline const uint8_t* ChipUid() { return F1ChipUid(); }
-inline constexpr uint32_t kChipUidSize = kF1ChipUidBytes;
 }  // namespace XrDap

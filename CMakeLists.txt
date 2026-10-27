@@ -51,7 +51,7 @@ target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_
 # rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
 include(xrdap-core/xrdap_core.cmake)
 target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
-target_include_directories(xrdap.elf PRIVATE app ${XRDAP_CORE_INCLUDE_DIRS})
+target_include_directories(xrdap.elf PRIVATE app common ${XRDAP_CORE_INCLUDE_DIRS})
 target_compile_definitions(xrdap.elf PRIVATE XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
 if(XRDAP_HAS_RADIO)
   # Role and modulation are settings in flash (app/config.hpp); one image serves both
