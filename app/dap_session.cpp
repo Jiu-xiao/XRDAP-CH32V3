@@ -42,7 +42,7 @@ uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds
 void Fail(const uint8_t* req, uint8_t* resp, uint16_t& out_len)
 {
   resp[0] = req[0];
-  resp[1] = Dap::kError;
+  resp[1] = Byte(DapStatus::ERROR);
   out_len = 2;
 }
 
@@ -78,7 +78,7 @@ bool Forward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_
     Fail(req, resp, out_len);
     return false;
   }
-  const bool disconnect = IsCommand(req, req_len, Dap::kDisconnect);
+  const bool disconnect = IsCommand(req, req_len, Byte(DapCmd::DISCONNECT));
   if (!LinkForward(req, req_len, resp, resp_cap, out_len,
                    ExecutionUs(req, req_len, swd_hz), !disconnect))
   {
@@ -170,8 +170,8 @@ bool DapSessionHandleUsbCommand(const uint8_t* req, uint16_t req_len, uint8_t* r
       break;
   }
   // DAP_Info is the same on both probes; tools ask it before they connect.
-  if (IsCommand(req, req_len, Dap::kInfo)) return false;
-  if (IsCommand(req, req_len, Dap::kConnect))
+  if (IsCommand(req, req_len, Byte(DapCmd::INFO))) return false;
+  if (IsCommand(req, req_len, Byte(DapCmd::CONNECT)))
   {
     // A new session: the previous one (if any) is over for the remote too.
     ResetSessions();
@@ -196,11 +196,11 @@ bool DapSessionHandleUsbCommand(const uint8_t* req, uint16_t req_len, uint8_t* r
   replay.Note(req, req_len);
   if (!session_wireless)
   {
-    if (IsCommand(req, req_len, Dap::kDisconnect)) session_local = false;
+    if (IsCommand(req, req_len, Byte(DapCmd::DISCONNECT))) session_local = false;
     return false;
   }
   (void)Forward(req, req_len, resp, resp_cap, out_len);
-  if (IsCommand(req, req_len, Dap::kDisconnect)) session_wireless = false;
+  if (IsCommand(req, req_len, Byte(DapCmd::DISCONNECT))) session_wireless = false;
   return true;
 }
 

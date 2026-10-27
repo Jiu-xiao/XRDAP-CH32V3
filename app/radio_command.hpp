@@ -22,10 +22,16 @@
 
 #include <cstdint>
 
+#include "xrdap/session/command_class.hpp"
+
 namespace XrDap
 {
 /// 本探针的厂商命令字节 / This probe's vendor command byte.
 inline constexpr uint8_t kProbeCommand = 0x9F;
+/// The read-only settings query 0x9F 0x13 needs no ownership of the probe; the other
+/// operations, and 0x9F 0x30 wrapping any of them (it uses the radio link, which may be
+/// carrying another transport's session), do.
+inline constexpr FreeCommand kSettingsQueryFree{2, {kProbeCommand, 0x13U}};
 
 /// @brief 处理一条 0x9F 命令（来自 USB 或对端），返回应答长度 / Answer one 0x9F command
 ///        (from USB or from the peer) and return the answer size.

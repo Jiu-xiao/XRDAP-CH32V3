@@ -19,29 +19,29 @@ uint32_t ExecutionUs(const uint8_t* req, uint16_t len, uint32_t swd_hz)
 {
   if (len == 0U || swd_hz == 0U) return 0U;
   uint32_t transactions = 0;
-  if (IsCommand(req, len, Dap::kTransfer) && len >= 3U) transactions = req[2];
-  if (IsCommand(req, len, Dap::kTransferBlock) && len >= 4U)
+  if (IsCommand(req, len, Byte(DapCmd::TRANSFER)) && len >= 3U) transactions = req[2];
+  if (IsCommand(req, len, Byte(DapCmd::TRANSFER_BLOCK)) && len >= 4U)
     transactions = static_cast<uint32_t>(req[2] | req[3] << 8);
   uint32_t us = static_cast<uint32_t>(2ULL * kBitsPerTransaction * transactions *
                                       1'000'000ULL / swd_hz);
-  if (IsCommand(req, len, Dap::kDelay) && len >= 3U)
+  if (IsCommand(req, len, Byte(DapCmd::DELAY)) && len >= 3U)
     us += static_cast<uint32_t>(req[1] | req[2] << 8);
-  if (IsCommand(req, len, Dap::kSwjPins) && len >= 7U)
+  if (IsCommand(req, len, Byte(DapCmd::SWJ_PINS)) && len >= 7U)
   {
     uint32_t wait = 0;
     std::memcpy(&wait, req + 3, sizeof(wait));
     us += wait < kMaxPinWaitUs ? wait : kMaxPinWaitUs;
   }
-  if (IsCommand(req, len, Dap::kResetTarget) ||
-      IsCommand(req, len, Dap::kQueueCommands) ||
-      IsCommand(req, len, Dap::kExecuteCommands))
+  if (IsCommand(req, len, Byte(DapCmd::RESET_TARGET)) ||
+      IsCommand(req, len, Byte(DapCmd::QUEUE_COMMANDS)) ||
+      IsCommand(req, len, Byte(DapCmd::EXECUTE_COMMANDS)))
     us += kLongCommandUs;
   return us;
 }
 
 uint32_t SwjClockHz(const uint8_t* req, uint16_t len)
 {
-  if (!IsCommand(req, len, Dap::kSwjClock) || len < 5U) return 0U;
+  if (!IsCommand(req, len, Byte(DapCmd::SWJ_CLOCK)) || len < 5U) return 0U;
   uint32_t hz = 0;
   std::memcpy(&hz, req + 1, sizeof(hz));
   return hz;
