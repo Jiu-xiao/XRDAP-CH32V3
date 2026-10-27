@@ -152,6 +152,7 @@ extern "C" void app_main()
         return size;
       },
       +[]() { exec.EndSession(Transport::RADIO); });
+  exec.SetFreeCommands(&kSettingsQueryFree, 1U);
   // After the owner check: 0x9F is this probe's radio and settings; on the host, the
   // session layer forwards USB commands over the radio during a wireless session.
   exec.SetForwarder(

@@ -19,12 +19,12 @@
 
 #include <cstdint>
 
-#include "xrdap/protocol/dap_ids.hpp"
+#include "xrdap/protocol/dap_cmd.hpp"
 
 namespace XrDap
 {
-/// @brief req[0] 是不是这条 DAP 命令（XRDAP-Core 的 Dap::k* 命令号）/ Whether req[0] is
-///        this DAP command (XRDAP-Core's Dap::k* ids).
+/// @brief req[0] 是不是这条 DAP 命令（XRDAP-Core 的 DapCmd 命令号）/ Whether req[0] is
+///        this DAP command (XRDAP-Core's DapCmd ids).
 inline bool IsCommand(const uint8_t* req, uint16_t len, uint8_t id)
 {
   return len != 0U && req[0] == id;
@@ -64,8 +64,8 @@ class SettingsReplay
     uint8_t size;
     uint8_t data[8];
   };
-  Item items_[kSettings] = {{Dap::kSwjClock, 0, {}},
-                            {Dap::kTransferConfigure, 0, {}},
-                            {Dap::kSwdConfigure, 0, {}}};
+  Item items_[kSettings] = {{Byte(DapCmd::SWJ_CLOCK), 0, {}},
+                            {Byte(DapCmd::TRANSFER_CONFIGURE), 0, {}},
+                            {Byte(DapCmd::SWD_CONFIGURE), 0, {}}};
 };
 }  // namespace XrDap
