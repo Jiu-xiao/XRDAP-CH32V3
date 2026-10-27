@@ -16,22 +16,11 @@ namespace XrDap::Vendor
 class LoopSampling;
 }  // namespace XrDap::Vendor
 
-namespace XrDap::Session
-{
-class MultiTransport;
-}  // namespace XrDap::Session
-
 namespace XrDap::Port
 {
 /// 单循环采样：主循环在两条命令之间调用 Poll / Single-loop sampling: the main loop calls
 /// Poll between two commands.
 using SamplerPolicy = Vendor::LoopSampling;
-
-/// USB 和无线远端两条传输 / Two transports: USB and the radio peer.
-using TransportPolicy = Session::MultiTransport;
-
-/// USB 和无线远端两条传输 / Two transports: USB and the radio peer.
-using TransportPolicy = Session::MultiTransport;
 
 /// 采样帧缓冲字节数，2 的幂，INFO 会报告 / Sample frame buffer size, a power of two,
 /// reported by INFO.
