@@ -121,15 +121,14 @@ extern "C" void app_main()
   FormatSerial(ChipUid(), kChipUidSize, serial);
   SetProbeInfo(dap, {kProductName, Board::kName, serial, kFirmwareVersion});
   static DfuRuntime dfu(RestartIntoBootloader);
-  // XRDAP-Core: one transport owns the probe at a time (USB, or the radio peer on a
+  // XRDAP-Core: the probe is used over one link at a time (USB, or the radio peer on a
   // remote), every DAP command goes through the executor, and the XR vendor extension
-  // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset ends
-  // the USB session. The sampling task outranks the DAP loop (priority 3).
-  static SessionOwner session;
-  session.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
-  static DapVendor vendor(swd, session);
+  // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset
+  // lapses a connection on USB. The sampling task outranks the DAP loop (priority 3).
+  static DapVendor vendor(swd);
+  vendor.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
   static DapActivity activity;
-  static Executor<DapClass> exec(dap, session, vendor, activity);
+  static Executor<DapClass> exec(dap, vendor, activity);
   StartSamplerTask(vendor, kSamplerPriority);
 #ifdef XRDAP_HAS_STATUS_LIGHTS
   StatusLightsBegin(
@@ -142,8 +141,8 @@ extern "C" void app_main()
 #endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
-  // On a remote, the peer's commands are the RADIO transport; its session ends with the
-  // link's session (B6), which ends RADIO's ownership and the sampling it started.
+  // On a remote, the peer's commands are the RADIO link; when the link's session ends (B6)
+  // the connection on RADIO lapses and the sampling it started stops.
   DapSessionInit(
       +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
       {
@@ -151,9 +150,8 @@ extern "C" void app_main()
         exec.Execute(Transport::RADIO, req, req_len, resp, resp_cap, size);
         return size;
       },
-      +[]() { exec.EndSession(Transport::RADIO); });
-  exec.SetFreeCommands(&kSettingsQueryFree, 1U);
-  // After the owner check: 0x9F is this probe's radio and settings; on the host, the
+      +[]() { exec.LinkLost(Transport::RADIO); });
+  // 0x9F is this probe's radio and settings; on the host, the
   // session layer forwards USB commands over the radio during a wireless session.
   exec.SetForwarder(
       +[](void*, Transport t, const uint8_t* req, uint16_t len, uint8_t* resp,
