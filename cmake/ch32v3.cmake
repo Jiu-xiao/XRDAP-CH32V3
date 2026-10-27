@@ -47,12 +47,10 @@ endif()
 #                         XRDAP_APP_SIZE) and the boot mailbox magics
 #                         (XRDAP_BOOT_REQUEST_MAGIC0/1), and bootloader/ is not built
 #   XRDAP_RAM_SIZE        SRAM linked
-#   XRDAP_RTOS_HEAP_SIZE  FreeRTOS heap (task stacks and the LibXR objects)
-#   XRDAP_APP_STACK_WORDS stack of the application task (app/main.c)
-#   XRDAP_MAIN_STACK_SIZE stack of main() before the scheduler starts (interrupts then
-#                         run on the FreeRTOS ISR stack)
-#   XRDAP_C_HEAP_SIZE     newlib heap of the application (operator new uses the FreeRTOS
-#                         heap, so nothing in the application allocates from it)
+#   XRDAP_MAIN_STACK_SIZE stack of the single loop (main() runs the application and the
+#                         interrupts run on the same stack)
+#   XRDAP_C_HEAP_SIZE     newlib heap of the application (operator new takes the LibXR
+#                         objects built at start-up from it)
 #   XRDAP_DAP_PACKET_COUNT CMSIS-DAP packet count (1024-byte packets)
 #   XRDAP_RING_BYTES      sampling ring buffer (reported by vendor INFO)
 if(NOT DEFINED XRDAP_EXTERNAL_BOOTLOADER)
@@ -64,12 +62,6 @@ if(NOT DEFINED XRDAP_BOOT_REQUEST_MAGIC0)
 endif()
 if(NOT DEFINED XRDAP_RAM_SIZE)
   set(XRDAP_RAM_SIZE 0x10000)
-endif()
-if(NOT DEFINED XRDAP_RTOS_HEAP_SIZE)
-  set(XRDAP_RTOS_HEAP_SIZE 34816)
-endif()
-if(NOT DEFINED XRDAP_APP_STACK_WORDS)
-  set(XRDAP_APP_STACK_WORDS 1536)
 endif()
 if(NOT DEFINED XRDAP_MAIN_STACK_SIZE)
   set(XRDAP_MAIN_STACK_SIZE 4096)
@@ -137,7 +129,6 @@ set(XRDAP_COMMON_DEFINES
     XRDAP_APP_SIZE=${XRDAP_APP_SIZE}
     XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
     XRDAP_CONFIG_SIZE=${XRDAP_CONFIG_SIZE}
-    XRDAP_RTOS_HEAP_SIZE=${XRDAP_RTOS_HEAP_SIZE}
     XRDAP_RAM_SIZE=${XRDAP_RAM_SIZE}
     XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
 if(XRDAP_HAS_LED)

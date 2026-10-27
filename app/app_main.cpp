@@ -22,7 +22,7 @@
 #include "libxr.hpp"
 #include "probe_info.hpp"
 #include "reserved_ram.h"
-#include "sampler_task.hpp"
+#include "sampler_tick.hpp"
 #include "xrdap/session/executor.hpp"
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 #include "status_lights.hpp"
@@ -43,12 +43,6 @@ using namespace XrDap;
 
 constexpr uint16_t kDapPacketSize = 1024;
 constexpr uint8_t kDapPacketCount = XRDAP_DAP_PACKET_COUNT;  // per board (cmake)
-constexpr uint32_t kSamplerPriority = 5;
-#ifdef XRDAP_HAS_STATUS_LIGHTS
-// The DAP loop runs at 3 and does not block while the radio is in use; the light task
-// shares its priority so time slicing still runs it.
-constexpr uint32_t kLightsPriority = 3;
-#endif
 // SWD bit-bang timing in CPU cycles (LibXR SwdGpioTiming, x10), per board: one SWCLK
 // period on the delayed path costs a + b * N cycles, N delay loops per half period; the
 // path without delay costs c cycles per period.
@@ -106,7 +100,7 @@ extern "C" void app_main()
   BootGuardStart();
   Board::Init();
   static LibXR::CH32Timebase timebase;
-  LibXR::PlatformInit(3, 8192);
+  LibXR::PlatformInit();
   ConfigInit();
 
   static Swclk swclk;
@@ -130,10 +124,10 @@ extern "C" void app_main()
   static DapVendor vendor(swd, session);
   static DapActivity activity;
   static Executor<DapClass> exec(dap, session, vendor, activity);
-  StartSamplerTask(vendor, kSamplerPriority);
+  Vendor::TickTimer& sampler_timer = SamplerTimer(vendor);
 #ifdef XRDAP_HAS_STATUS_LIGHTS
   StatusLightsBegin(
-      kLightsPriority, activity,
+      activity,
       [](void* d) { return static_cast<DapClass*>(d)->IsInited(); }, &dap);
 #endif
 #ifdef XRDAP_HAS_STATUS_LED
@@ -188,6 +182,10 @@ extern "C" void app_main()
   for (;;)
   {
     BootGuardFeed();
+    vendor.Poll(sampler_timer);
+#ifdef XRDAP_HAS_STATUS_LIGHTS
+    StatusLightsPoll();
+#endif
 #ifdef XRDAP_HAS_RADIO
     // Pairing takes the radio over; the settings then apply again either way.
     if (PairingPoll()) DapSessionApplyConfig();
@@ -199,7 +197,7 @@ extern "C" void app_main()
       continue;
     }
 #endif
-    (void)exec.StepUsb(kStepWaitMs);
+    (void)exec.StepUsb(vendor.Sampling() ? 0 : kStepWaitMs);
     dfu.Process();
 #ifdef XRDAP_HAS_STATUS_LED
     StatusLedUpdate();

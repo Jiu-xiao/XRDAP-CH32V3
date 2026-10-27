@@ -196,4 +196,4 @@ bootloader 的 DFU 下载只能写到设置区之前：超过 `0x2F700` 字节�
 
 ## 许可证
 
-Apache-2.0。`platform/` 下 WCH 的启动文件、外设库和 FreeRTOS 保留各自的许可证。
+Apache-2.0。`platform/` 下 WCH 的启动文件和外设库保留各自的许可证。

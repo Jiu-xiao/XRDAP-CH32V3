@@ -196,4 +196,4 @@ The `libxr` submodule follows the `feat/xrdap-r2-swd-loop` branch, which carries
 
 ## License
 
-Apache-2.0. The WCH startup file, peripheral library and FreeRTOS under `platform/` keep their own licenses.
+Apache-2.0. The WCH startup file and peripheral library under `platform/` keep their own licenses.
