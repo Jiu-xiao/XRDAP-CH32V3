@@ -19,7 +19,7 @@ set(XRDAP_BOOT_REQUEST_MAGIC1 0x30335643)
 # CH32V305FB: 128K zero-wait flash, 32K SRAM, no other split (CH32V307DS0 p.4, table
 # 2-1-1). Smaller pools than the CH32V307 boards: 2 DAP packets, a 2 KB sampling ring.
 set(XRDAP_RAM_SIZE 0x8000)
-set(XRDAP_RTOS_HEAP_SIZE 19456)
+set(XRDAP_RTOS_HEAP_SIZE 19328)
 set(XRDAP_APP_STACK_WORDS 1024)
 set(XRDAP_MAIN_STACK_SIZE 1024)
 set(XRDAP_C_HEAP_SIZE 0x100)
