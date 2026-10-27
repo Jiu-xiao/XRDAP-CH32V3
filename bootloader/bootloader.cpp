@@ -27,7 +27,7 @@
 #include "libxr.hpp"
 #include "reserved_ram.h"
 #include "thread.hpp"
-#include "xrdap/probe/chip_uid.hpp"
+#include "chip_uid.hpp"
 #include "xrdap/probe/probe_identity.hpp"
 
 namespace
@@ -196,7 +196,7 @@ extern "C" void bootloader_main()
       "XR-DAP-V307 DFU", XrDap::kSerialPrefix);
   static LibXR::CH32USBOtgHS usb({{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid, 0x0100,
                                  {&kStrings}, {{&dfu}},
-                                 {XrDap::F1ChipUid(), XrDap::kF1ChipUidBytes});
+                                 {XrDap::ChipUid(), XrDap::kChipUidSize});
   usb.Init(false);
   usb.Start(false);
 
