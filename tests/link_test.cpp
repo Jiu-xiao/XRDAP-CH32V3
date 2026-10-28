@@ -193,6 +193,31 @@ void TestReassemblyResendTail()
   CHECK(r.Add(b[0].data(), static_cast<int>(b[0].size()), kGfsk) == Result::COMPLETE);
 }
 
+// --- CONTROL packets: another kind, the same fragmenting and reassembly ---------------
+void TestControlKind()
+{
+  static_assert(Link::kControl == 6 && Link::kControl != Link::kCommand &&
+                    Link::kControl != Link::kAnswer && Link::kControl != Link::kHello);
+  for (uint8_t fragment : {kGfsk, kFlrc})
+  {
+    const auto m = Message(300, 5);  // a control request is small, but may span fragments
+    const uint16_t total = static_cast<uint16_t>(m.size());
+    uint8_t buffer[Link::kMaxMessage];
+    Reassembler r(buffer, sizeof(buffer));
+    Reassembler::Result last = Reassembler::Result::INCOMPLETE;
+    for (uint8_t i = 0; i < Link::FragmentCount(total, fragment); ++i)
+    {
+      std::vector<uint8_t> p(Link::kHeader + fragment);
+      p.resize(Link::BuildFragment(Link::kControl, 11, m.data(), total, fragment, i,
+                                   p.data()));
+      CHECK(p[0] == Link::kControl);
+      last = r.Add(p.data(), static_cast<int>(p.size()), fragment);
+    }
+    CHECK(last == Reassembler::Result::COMPLETE);
+    CHECK(r.size() == total && std::memcmp(buffer, m.data(), total) == 0);
+  }
+}
+
 void TestPing()
 {
   uint8_t p[16];
@@ -438,6 +463,7 @@ int main()
   TestReassemblyRejects();
   TestReassemblyRestart();
   TestReassemblyResendTail();
+  TestControlKind();
   TestPing();
   TestRemoteLease();
   TestAnswerCacheAcrossSessions();

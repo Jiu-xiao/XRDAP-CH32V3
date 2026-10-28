@@ -25,6 +25,7 @@ constexpr uint32_t kBudgetUs = 1'000'000;
 constexpr uint32_t kPingWaitUs = 3'000;
 
 LinkExecutor execute = nullptr;
+LinkExecutor control_execute = nullptr;
 LinkSessionEnd session_end = nullptr;
 bool running = false;
 uint8_t host_sequence = 0;
@@ -80,9 +81,10 @@ void EndSession()
 }
 }  // namespace
 
-void LinkInit(LinkExecutor executor, LinkSessionEnd on_session_end)
+void LinkInit(LinkExecutor executor, LinkExecutor control, LinkSessionEnd on_session_end)
 {
   execute = executor;
+  control_execute = control;
   session_end = on_session_end;
 }
 
@@ -125,7 +127,7 @@ bool LinkPing(uint16_t session, uint32_t timeout_us)
 }
 
 bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap,
-                 uint16_t& out_len, uint32_t execution_us, bool more)
+                 uint16_t& out_len, uint32_t execution_us, bool more, bool control)
 {
   if (!running || req_len == 0U || req_len > kMaxMessage) return false;
   const uint8_t sequence = ++host_sequence;
@@ -136,7 +138,7 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
   const uint32_t begin = NowUs();
   while (NowUs() - begin < budget)
   {
-    SendMessage(Link::kCommand, sequence, req, req_len);
+    SendMessage(control ? Link::kControl : Link::kCommand, sequence, req, req_len);
     uint32_t deadline = NowUs() + wait;
     while (static_cast<int32_t>(deadline - NowUs()) > 0)
     {
@@ -176,7 +178,8 @@ void LinkServeRemote()
     SendPing(Link::kPong, sequence, lease.session());
     return;
   }
-  if (packet[0] != Link::kCommand || !lease.OnCommand(now)) return;  // R5
+  const bool is_control = packet[0] == Link::kControl;
+  if ((packet[0] != Link::kCommand && !is_control) || !lease.OnCommand(now)) return;  // R5
   if (commands.Add(packet, n, Fragment()) != Link::Reassembler::Result::COMPLETE) return;
 
   if (cache.Has(commands.sequence()))
@@ -187,7 +190,8 @@ void LinkServeRemote()
   }
   Radio().PrepareTransmit();  // the switch to FS overlaps the execution
   executing = true;
-  answer_size = execute(command, commands.size(), answer, sizeof(answer));
+  answer_size = (is_control ? control_execute : execute)(command, commands.size(), answer,
+                                                           sizeof(answer));
   executing = false;
   cache.Store(commands.sequence());
   SendMessage(Link::kAnswer, commands.sequence(), answer, answer_size);

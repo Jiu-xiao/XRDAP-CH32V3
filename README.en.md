@@ -79,11 +79,11 @@ One transport owns a probe at a time (the session owner of [XRDAP-Core](https://
 
 ### Pairing
 
-Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send vendor command `0x9F 0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
+Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
 
 ### Settings
 
-Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout) and are read and changed with vendor command `0x9F` (see `app/radio_command.hpp`). `0x9F 0x30` hands a `0x9F` command over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x9F 0x10` answer status 4 (not paired).
+Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1; the operations are in `app/radio_command.hpp`), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired).
 
 - Role: automatic (the default), always wired, always host, always remote.
 - Modulation (both boards must match):

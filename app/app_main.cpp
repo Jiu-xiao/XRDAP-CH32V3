@@ -23,6 +23,7 @@
 #include "probe_info.hpp"
 #include "reserved_ram.h"
 #include "sampler_tick.hpp"
+#include "xrdap/control/usb_control.hpp"
 #include "xrdap/session/executor.hpp"
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 #include "status_lights.hpp"
@@ -136,6 +137,10 @@ extern "C" void app_main()
 #endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
+  // The probe's radio and settings are control port requests (not DAP commands): over USB
+  // as EP0 vendor requests, over the radio as the CONTROL packet kind.
+  exec.SetControl(&RadioControl, nullptr);
+  static Control::UsbControl<DapClass> usb_control(dap, exec);
   // On a remote, the peer's commands are the RADIO link; when the link's session ends (B6)
   // the connection on RADIO lapses and the sampling it started stops.
   DapSessionInit(
@@ -145,18 +150,19 @@ extern "C" void app_main()
         exec.ExecuteHere(Transport::RADIO, req, req_len, resp, resp_cap, size);
         return size;
       },
+      +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+      {
+        uint16_t size = 0;
+        exec.ControlHere(req, req_len, resp, resp_cap, size);
+        return size;
+      },
       +[]() { exec.LinkLost(Transport::RADIO); });
-  // 0x9F is this probe's radio and settings; on the host, the
-  // session layer forwards USB commands over the radio during a wireless session.
+  // On the host, the session layer forwards USB commands over the radio during a wireless
+  // session.
   exec.SetForwarder(
       +[](void*, Transport t, const uint8_t* req, uint16_t len, uint8_t* resp,
           uint16_t cap, uint16_t& out)
       {
-        if (req[0] == kProbeCommand)
-        {
-          out = RadioVendorCommand(req, len, resp, cap);
-          return true;
-        }
         return t == Transport::USB &&
                DapSessionHandleUsbCommand(req, len, resp, cap, out);
       },

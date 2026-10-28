@@ -12,38 +12,39 @@ namespace XrDap
 {
 namespace
 {
-constexpr uint8_t kCommand = kProbeCommand;
 constexpr uint8_t kOpRole = 0x10, kOpSettings = 0x13, kOpSetRole = 0x14;
 constexpr uint8_t kOpSetModulation = 0x15, kOpUnpair = 0x16, kOpPair = 0x20,
                   kOpForward = 0x30;
 constexpr uint8_t kOk = 0, kTimeout = 1, kError = 2, kBadRequest = 3, kNotPaired = 4;
 
-uint16_t Reply(uint8_t* resp, uint8_t status)
+// The answer starts with the op of the request (`op status payload`).
+uint16_t Reply(uint8_t* resp, uint8_t op, uint8_t status)
 {
-  resp[0] = kCommand;
+  resp[0] = op;
   resp[1] = status;
   return 2;
 }
 
-uint16_t Store(uint8_t* resp, const Config& config)
+uint16_t Store(uint8_t* resp, uint8_t op, const Config& config)
 {
-  if (!SaveConfig(config)) return Reply(resp, kError);
+  if (!SaveConfig(config)) return Reply(resp, op, kError);
   DapSessionAfterAnswer(DapSessionApplyConfig);
-  return Reply(resp, kOk);
+  return Reply(resp, op, kOk);
 }
 
 uint16_t Handle(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
 {
-  switch (req[1])
+  const uint8_t op = req[0];
+  switch (op)
   {
     case kOpRole:
-      if (req_len < 3U || req[2] > static_cast<uint8_t>(RadioRole::REMOTE))
-        return Reply(resp, kBadRequest);
-      return Reply(resp, SetRadioRole(static_cast<RadioRole>(req[2])) ? kOk : kNotPaired);
+      if (req_len < 2U || req[1] > static_cast<uint8_t>(RadioRole::REMOTE))
+        return Reply(resp, op, kBadRequest);
+      return Reply(resp, op, SetRadioRole(static_cast<RadioRole>(req[1])) ? kOk : kNotPaired);
     case kOpSettings:
     {
       const Config& config = GetConfig();
-      Reply(resp, kOk);
+      Reply(resp, op, kOk);
       resp[2] = static_cast<uint8_t>(config.role);
       resp[3] = static_cast<uint8_t>(config.modulation);
       resp[4] = config.paired;
@@ -56,19 +57,19 @@ uint16_t Handle(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t re
     }
     case kOpSetRole:
     {
-      if (req_len < 3U || req[2] > static_cast<uint8_t>(RoleSetting::REMOTE))
-        return Reply(resp, kBadRequest);
+      if (req_len < 2U || req[1] > static_cast<uint8_t>(RoleSetting::REMOTE))
+        return Reply(resp, op, kBadRequest);
       Config config = GetConfig();
-      config.role = static_cast<RoleSetting>(req[2]);
-      return Store(resp, config);
+      config.role = static_cast<RoleSetting>(req[1]);
+      return Store(resp, op, config);
     }
     case kOpSetModulation:
     {
-      if (req_len < 3U || req[2] > static_cast<uint8_t>(Modulation::FLRC))
-        return Reply(resp, kBadRequest);
+      if (req_len < 2U || req[1] > static_cast<uint8_t>(Modulation::FLRC))
+        return Reply(resp, op, kBadRequest);
       Config config = GetConfig();
-      config.modulation = static_cast<Modulation>(req[2]);
-      return Store(resp, config);
+      config.modulation = static_cast<Modulation>(req[1]);
+      return Store(resp, op, config);
     }
     case kOpUnpair:
     {
@@ -76,32 +77,34 @@ uint16_t Handle(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t re
       config.paired = 0;
       config.link_id = 0;
       std::memset(config.peer_uid, 0, sizeof(config.peer_uid));
-      return Store(resp, config);
+      return Store(resp, op, config);
     }
     case kOpPair:
       PairingRequest();
-      return Reply(resp, kOk);
+      return Reply(resp, op, kOk);
     case kOpForward:
     {
-      if (req_len < 4U || req[2] != kCommand) return Reply(resp, kBadRequest);
-      if (!DapSessionRadioInUse()) return Reply(resp, kNotPaired);
+      // The request for the peer is the rest; forwarding a forward is refused.
+      if (req_len < 2U || req[1] == kOpForward) return Reply(resp, op, kBadRequest);
+      if (!DapSessionRadioInUse()) return Reply(resp, op, kNotPaired);
       uint16_t size = 0;
-      if (!DapSessionForward(req + 2, static_cast<uint16_t>(req_len - 2U), resp, resp_cap,
+      if (!DapSessionForward(req + 1, static_cast<uint16_t>(req_len - 1U), resp, resp_cap,
                              size))
-        return Reply(resp, kTimeout);
+        return Reply(resp, op, kTimeout);
       return size;
     }
     default:
-      return Reply(resp, kBadRequest);
+      return Reply(resp, op, kBadRequest);
   }
 }
 }  // namespace
 
-uint16_t RadioVendorCommand(const uint8_t* req, uint16_t req_len, uint8_t* resp,
-                            uint16_t resp_cap)
+uint16_t RadioControl(void*, const uint8_t* req, uint16_t req_len, uint8_t* resp,
+                      uint16_t resp_cap)
 {
-  return req_len >= 2U && resp_cap >= 80U ? Handle(req, req_len, resp, resp_cap)
-                                          : Reply(resp, kBadRequest);
+  if (req == nullptr || req_len < 1U || resp_cap < 80U)
+    return resp_cap >= 2U ? Reply(resp, req_len >= 1U ? req[0] : 0U, kBadRequest) : 0U;
+  return Handle(req, req_len, resp, resp_cap);
 }
 
 }  // namespace XrDap
