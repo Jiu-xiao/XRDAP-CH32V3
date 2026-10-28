@@ -20,7 +20,7 @@ set(XRDAP_BOOT_REQUEST_MAGIC1 0x30335643)
 # 2-1-1). Smaller pools than the CH32V307 boards: 2 DAP packets, a 2 KB sampling ring.
 set(XRDAP_RAM_SIZE 0x8000)
 set(XRDAP_MAIN_STACK_SIZE 3072)
-set(XRDAP_C_HEAP_SIZE 0x800)
+set(XRDAP_C_HEAP_SIZE 0x2000)
 set(XRDAP_DAP_PACKET_COUNT 2)
 set(XRDAP_RING_BYTES 2048)
 # The LED on PC9 shows the DAP status (v305.hpp).
