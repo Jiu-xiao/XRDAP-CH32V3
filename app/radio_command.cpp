@@ -7,6 +7,7 @@
 #include "config.hpp"
 #include "dap_session.hpp"
 #include "pairing.hpp"
+#include "xrdap/control/control.hpp"
 
 namespace XrDap
 {
@@ -94,7 +95,7 @@ uint16_t Handle(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t re
       return size;
     }
     default:
-      return Reply(resp, op, kBadRequest);
+      return Reply(resp, op, Control::kStatusUnsupported);
   }
 }
 }  // namespace
@@ -103,7 +104,9 @@ uint16_t RadioControl(void*, const uint8_t* req, uint16_t req_len, uint8_t* resp
                       uint16_t resp_cap)
 {
   if (req == nullptr || req_len < 1U || resp_cap < 80U)
-    return resp_cap >= 2U ? Reply(resp, req_len >= 1U ? req[0] : 0U, kBadRequest) : 0U;
+    return resp_cap >= 2U ? Reply(resp, req != nullptr && req_len >= 1U ? req[0] : 0U,
+                                  Control::kStatusBadRequest)
+                          : 0U;
   return Handle(req, req_len, resp, resp_cap);
 }
 

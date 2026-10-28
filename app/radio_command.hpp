@@ -16,8 +16,8 @@
 //                   radio -> the peer's answer, or status 1 when it does not answer,
 //                   4 when not paired
 // Settings take effect once the answer has been sent. status: 0 OK, 1 timeout, 2 flash
-// error, 3 bad request, 4 not paired. An unpaired probe does not listen to the radio, so
-// requests reach it over USB only.
+// error, 3 bad argument, 4 not paired, 0xF1 empty request, 0xF2 unknown op. An unpaired
+// probe does not listen to the radio, so requests reach it over USB only.
 //
 // 探针自己的射频和设置，作为控制口的请求（XRDAP-Core docs/protocol.md 3.7.1），不是 DAP
 // 命令。请求是 `op 载荷`，应答是 `op 状态 载荷`；状态 0xF0 到 0xFF 留给控制口自己。格式见
