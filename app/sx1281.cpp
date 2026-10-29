@@ -21,7 +21,7 @@ constexpr uint8_t kSetStandby = 0x80, kSetFs = 0xC1, kSetTx = 0x83, kSetRx = 0x8
 constexpr uint8_t kSetAutoFs = 0x9E;
 constexpr uint8_t kSetPacketType = 0x8A, kSetRfFrequency = 0x86, kSetBufferBase = 0x8F;
 constexpr uint8_t kSetModulation = 0x8B, kSetPacketParams = 0x8C, kSetTxParams = 0x8E;
-constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97;
+constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97, kGetIrqStatus = 0x15;
 constexpr uint8_t kGetRxBufferStatus = 0x17, kGetPacketStatus = 0x1D;
 constexpr uint8_t kWriteBuffer = 0x1A, kReadBuffer = 0x1B, kWriteRegister = 0x18;
 constexpr uint8_t kStandbyXosc = 0x01;
@@ -52,6 +52,9 @@ constexpr uint16_t kCrcSeedReg = 0x09C8;
 // while receiving.
 constexpr uint16_t kIrqTxDone = 0x0001, kIrqRxDone = 0x0002, kIrqCrcError = 0x0040;
 constexpr uint16_t kIrqMask = kIrqTxDone | kIrqRxDone | kIrqCrcError;
+// Latched in the IRQ status only, for the stuck-preamble check (see sx1281.hpp).
+constexpr uint16_t kIrqSyncValid = 0x0004, kIrqPreamble = 0x8000;
+constexpr uint16_t kIrqLatched = kIrqMask | kIrqSyncValid | kIrqPreamble;
 // Error byte of GetPacketStatus (table 11-68): LengthError, CrcError, AbortError.
 constexpr uint8_t kPacketErrors = 0x20 | 0x10 | 0x08;
 
@@ -71,6 +74,9 @@ constexpr uint16_t kMaxTransfer = 3 + Sx1281::kMaxPayload;
 // after kRestartUs.
 constexpr uint32_t kRearmUs = 100'000;
 constexpr uint32_t kRestartUs = 2'000'000;
+// Stuck preamble: look every kStuckCheckUs, enter receive again after kStuckUs.
+constexpr uint32_t kStuckCheckUs = 1'000;
+constexpr uint32_t kStuckUs = 2'000;
 
 alignas(4) uint8_t dma_rx[kMaxTransfer];
 alignas(4) uint8_t dma_tx[kMaxTransfer];
@@ -240,6 +246,7 @@ void Sx1281::Receive()
   hw->txen.Write(false);
   hw->rxen.Write(true);
   Command({kSetRx, 0x00, 0xFF, 0xFF});  // continuous
+  preamble_seen_ = false;
   // Silence counts from here: right after a transmit the answer is still on its way.
   rearmed_us_ = NowUs();
 }
@@ -270,8 +277,8 @@ bool Sx1281::Start()
                static_cast<uint8_t>(identity_.crc_seed >> 8),
                static_cast<uint8_t>(identity_.crc_seed)}) &&
       Command({kSetTxParams, static_cast<uint8_t>(kPowerDbm + 18), kRamp}) &&
-      Command({kSetDioIrq, kIrqMask >> 8, kIrqMask & 0xFF, kIrqMask >> 8, kIrqMask & 0xFF,
-               0, 0, 0, 0}) &&
+      Command({kSetDioIrq, kIrqLatched >> 8, kIrqLatched & 0xFF, kIrqMask >> 8,
+               kIrqMask & 0xFF, 0, 0, 0, 0}) &&
       Command({kSetAutoFs, 0x01});
   ClearIrq();
   Receive();
@@ -376,12 +383,33 @@ void Sx1281::Recover()
   {
     Start();
   }
-  else if (now - rearmed_us_ >= kRearmUs)
+  else if (now - rearmed_us_ >= kRearmUs || PreambleStuck(now))
   {
     Command({kSetStandby, kStandbyXosc});
     ClearIrq();
     Receive();
   }
+}
+
+bool Sx1281::PreambleStuck(uint32_t now)
+{
+  if (now - checked_us_ < kStuckCheckUs) return false;
+  checked_us_ = now;
+  uint8_t status[4] = {kGetIrqStatus, 0, 0, 0};
+  Transfer(status, status, sizeof(status));
+  const uint16_t irq = static_cast<uint16_t>((status[2] << 8) | status[3]);
+  if ((irq & kIrqPreamble) == 0U || (irq & (kIrqSyncValid | kIrqRxDone)) != 0U)
+  {
+    preamble_seen_ = false;
+    return false;
+  }
+  if (!preamble_seen_)
+  {
+    preamble_seen_ = true;
+    preamble_us_ = now;
+    return false;
+  }
+  return now - preamble_us_ >= kStuckUs;
 }
 
 bool Sx1281::PacketBad()

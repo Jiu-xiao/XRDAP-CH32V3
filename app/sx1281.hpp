@@ -10,8 +10,13 @@
 // The radio receives continuously and stays in FS between transmit and receive
 // (SetAutoFs, 11.6.12). Only RxDone and CrcError reach DIO1 while receiving, so a high
 // DIO1 means a packet; the error byte of GetPacketStatus decides about the CRC (errata
-// 16.3). Continuous receive can stop hearing packets (errata 16.1): Poll() enters
-// receive again after 100 ms without a packet and resets the radio after 2 s.
+// 16.3). Continuous receive can stop hearing packets (errata 16.1): measured on a wdap
+// pair, the receiver flags PreambleDetected, finds no sync word and then hears nothing,
+// not even bad packets, until it enters receive again. PreambleDetected and SyncWordValid
+// are therefore latched in the IRQ status (not on DIO1); Poll() looks every 1 ms and
+// enters receive again when a preamble has had no sync word for 2 ms (a whole packet
+// takes at most about 1.3 ms). Poll() also enters receive again after 100 ms without a
+// packet and resets the radio after 2 s.
 //
 // Context: one owner thread (the application's main loop) calls every member; nothing
 // runs in an interrupt. Calls block for at most a few milliseconds (BUSY, TX done);
@@ -25,7 +30,11 @@
 //
 // 射频连续接收，收发之间停在 FS（SetAutoFs，11.6.12）。接收时只有 RxDone 和 CrcError
 // 接到 DIO1，DIO1 为高即有包；CRC 由 GetPacketStatus 的错误字节判断（勘误 16.3）。连续
-// 接收可能收不到包（勘误 16.1）：Poll() 100 ms 没收到包时重新进入接收，2 s 时复位射频。
+// 接收可能收不到包（勘误 16.1）：在一对 wdap 上实测，接收机报出 PreambleDetected、找不到
+// 同步字，之后什么都收不到（连坏包都没有），直到重新进入接收。所以 PreambleDetected 和
+// SyncWordValid 也锁存在中断状态里（不接 DIO1）；Poll() 每 1 ms 看一次，前导码出现 2 ms
+// 还没有同步字就重新进入接收（一个完整的包最多约 1.3 ms）。另外 Poll() 100 ms 没收到包
+// 时重新进入接收，2 s 时复位射频。
 //
 // 上下文：所有成员只由一个所有者线程（应用主循环）调用，不在中断里运行。每次调用最多
 // 阻塞几毫秒（等 BUSY、等发送完成）；StartBurst() 和 ContinueBurst() 不等发送完成，包在
@@ -126,6 +135,7 @@ class Sx1281
   void Receive();
   void ClearIrq();
   void Recover();
+  bool PreambleStuck(uint32_t now);
   bool WriteSyncWord();
   uint8_t Load(Fill fill, void* ctx, uint8_t index);
   bool PacketBad();
@@ -143,8 +153,11 @@ class Sx1281
   bool gfsk_ = true;
   Identity identity_ = DefaultIdentity();
 
-  uint32_t heard_us_ = 0;    // last packet from the radio, or start
-  uint32_t rearmed_us_ = 0;  // last time receive was entered
+  uint32_t heard_us_ = 0;     // last packet from the radio, or start
+  uint32_t rearmed_us_ = 0;   // last time receive was entered
+  uint32_t checked_us_ = 0;   // last look at the IRQ status for a stuck preamble
+  uint32_t preamble_us_ = 0;  // when a preamble without a sync word was first seen
+  bool preamble_seen_ = false;
 };
 
 /// @brief 本板唯一的 SX1281 / The board's SX1281.
