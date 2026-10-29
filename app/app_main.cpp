@@ -192,8 +192,9 @@ extern "C" void app_main()
     StatusLightsPoll();
 #endif
 #ifdef XRDAP_HAS_RADIO
-    // Pairing takes the radio over; the settings then apply again either way.
-    if (PairingPoll()) DapSessionApplyConfig();
+    // Pairing takes the radio over (after an answer still on air); the settings then
+    // apply again either way.
+    if (!Radio().Bursting() && PairingPoll()) DapSessionApplyConfig();
     if (DapSessionRadioInUse())
     {
       DapSessionService();

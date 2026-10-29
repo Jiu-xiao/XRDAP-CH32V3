@@ -14,7 +14,9 @@
 // receive again after 100 ms without a packet and resets the radio after 2 s.
 //
 // Context: one owner thread (the application's main loop) calls every member; nothing
-// runs in an interrupt. Calls block for at most a few milliseconds (BUSY, TX done).
+// runs in an interrupt. Calls block for at most a few milliseconds (BUSY, TX done);
+// StartBurst() and ContinueBurst() do not wait for TX done, so the owner can do other
+// work while a packet is on air.
 //
 // 用于无线链路的 SX1281，调制方式运行时二选一：GFSK 2 Mb/s 或 FLRC 1.3 Mb/s；变长包，
 // 2 字节 CRC；VG2392S240X0M2 模块的射频开关由 TXEN/RXEN 控制。一对探针靠身份（频点、
@@ -26,7 +28,8 @@
 // 接收可能收不到包（勘误 16.1）：Poll() 100 ms 没收到包时重新进入接收，2 s 时复位射频。
 //
 // 上下文：所有成员只由一个所有者线程（应用主循环）调用，不在中断里运行。每次调用最多
-// 阻塞几毫秒（等 BUSY、等发送完成）。
+// 阻塞几毫秒（等 BUSY、等发送完成）；StartBurst() 和 ContinueBurst() 不等发送完成，包在
+// 空中时所有者可以做别的事。
 
 #include <cstdint>
 #include <initializer_list>
@@ -86,6 +89,27 @@ class Sx1281
   /// @return 每一包都发出时为 true / true when every packet went out.
   bool TransmitBurst(uint8_t count, Fill fill, void* ctx);
 
+  /// @brief 开始连发 count 包：发出第 0 包就返回，其余由 ContinueBurst() 发 / Start
+  ///        sending `count` packets: returns once packet 0 is on air; ContinueBurst()
+  ///        sends the rest.
+  /// @note fill 和 ctx 要保持有效直到 Bursting() 为 false；连发期间不能调用 Poll() /
+  ///       fill and ctx must stay valid until Bursting() is false; do not call Poll()
+  ///       during the burst.
+  void StartBurst(uint8_t count, Fill fill, void* ctx);
+
+  /// @brief 推进连发：空中的包发完（TxDone，或 5 ms 超时）就发下一包，最后一包之后回到
+  ///        接收 / Advance the burst: once the packet on air is done (TxDone, or 5 ms
+  ///        without it) send the next one, and after the last one return to receive.
+  /// @return 连发还没结束时为 true / true while the burst goes on.
+  /// @note 不等发送完成 / Does not wait for TX done.
+  bool ContinueBurst();
+
+  /// 是否在连发 / Whether a burst is in progress.
+  bool Bursting() const { return burst_count_ != 0U; }
+
+  /// 上一次连发是否每一包都发出 / Whether every packet of the last burst went out.
+  bool BurstSent() const { return burst_sent_; }
+
   /// @brief 取一个收到的包 / Fetch one received packet.
   /// @param data 至少 kMaxPayload 字节 / At least kMaxPayload bytes.
   /// @return 包长；没有包时 0；坏包（CRC、长度）时 -1 / The packet size; 0 when none
@@ -106,6 +130,14 @@ class Sx1281
   uint8_t Load(Fill fill, void* ctx, uint8_t index);
   bool PacketBad();
   void SetPacketParams(uint8_t size);
+  void SendLoaded(uint8_t size);
+
+  Fill burst_fill_ = nullptr;
+  void* burst_ctx_ = nullptr;
+  uint8_t burst_count_ = 0;  // 0: no burst
+  uint8_t burst_index_ = 0;  // packet on air
+  uint32_t burst_sent_us_ = 0;
+  bool burst_sent_ = true;
 
   bool prepared_ = false;
   bool gfsk_ = true;

@@ -246,6 +246,7 @@ void Sx1281::Receive()
 
 bool Sx1281::Start()
 {
+  burst_count_ = 0;  // a burst in progress ends with the reset
   hw->nreset.Write(false);
   LibXR::Thread::Sleep(2);
   hw->nreset.Write(true);
@@ -317,27 +318,55 @@ void Sx1281::PrepareTransmit()
 
 bool Sx1281::TransmitBurst(uint8_t count, Fill fill, void* ctx)
 {
+  StartBurst(count, fill, ctx);
+  while (ContinueBurst())
+  {
+  }
+  return burst_sent_;
+}
+
+void Sx1281::SendLoaded(uint8_t size)
+{
+  SetPacketParams(size);
+  Command({kSetTx, 0x00, 0x00, 0x00});
+  burst_sent_us_ = NowUs();
+}
+
+void Sx1281::StartBurst(uint8_t count, Fill fill, void* ctx)
+{
+  if (count == 0U) return;
   if (!prepared_) PrepareTransmit();
   prepared_ = false;
   hw->rxen.Write(false);
   hw->txen.Write(true);
+  burst_fill_ = fill;
+  burst_ctx_ = ctx;
+  burst_count_ = count;
+  burst_index_ = 0;
+  burst_sent_ = true;
+  SendLoaded(Load(fill, ctx, 0));
+}
 
-  uint8_t size = Load(fill, ctx, 0);
-  bool all_sent = true;
-  for (uint8_t i = 0; i < count; ++i)
+bool Sx1281::ContinueBurst()
+{
+  if (burst_count_ == 0U) return false;
+  // DIO1 carries TxDone while transmitting (see the file header).
+  if (!fast_dio1.Read())
   {
-    SetPacketParams(size);
-    Command({kSetTx, 0x00, 0x00, 0x00});
-    uint32_t waited = 0;
-    const bool sent = WaitLevel(fast_dio1, true, kTxTimeoutUs, waited);
-    ClearIrq();
-    all_sent = all_sent && sent;
-    if (i + 1U < count) size = Load(fill, ctx, static_cast<uint8_t>(i + 1U));
+    if (NowUs() - burst_sent_us_ < kTxTimeoutUs) return true;
+    burst_sent_ = false;
   }
+  ClearIrq();
+  if (++burst_index_ < burst_count_)
+  {
+    SendLoaded(Load(burst_fill_, burst_ctx_, burst_index_));
+    return true;
+  }
+  burst_count_ = 0;
   // Receive accepts any length up to the maximum (variable length filters longer ones).
   SetPacketParams(MaxPayload());
   Receive();
-  return all_sent;
+  return false;
 }
 
 void Sx1281::Recover()

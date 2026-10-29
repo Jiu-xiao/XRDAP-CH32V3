@@ -47,23 +47,57 @@ uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds
 
 uint8_t Fragment() { return static_cast<uint8_t>(Radio().MaxPayload() - kHeader); }
 
+struct Message
+{
+  uint8_t kind, sequence, fragment;
+  const uint8_t* data;
+  uint16_t size;
+};
+
+uint8_t FillFragment(void* ctx, uint8_t index, uint8_t* packet)
+{
+  const auto& m = *static_cast<const Message*>(ctx);
+  return Link::BuildFragment(m.kind, m.sequence, m.data, m.size, m.fragment, index,
+                             packet);
+}
+
 void SendMessage(uint8_t kind, uint8_t sequence, const uint8_t* data, uint16_t size)
 {
-  struct Message
+  Message message{kind, sequence, Fragment(), data, size};
+  Radio().TransmitBurst(Link::FragmentCount(size, message.fragment), &FillFragment,
+                        &message);
+}
+
+// The remote's answer goes out while the main loop keeps running (sampling, USB): the
+// burst only starts here, LinkServeRemote() advances it, and the message outlives the
+// call.
+Message answer_message{};
+
+void StartAnswer(uint8_t sequence)
+{
+  answer_message = {Link::kAnswer, sequence, Fragment(), answer, answer_size};
+  Radio().StartBurst(Link::FragmentCount(answer_size, answer_message.fragment),
+                     &FillFragment, &answer_message);
+}
+
+// After the whole answer is on air: settings changed by the command take effect now.
+void AnswerSent()
+{
+  if (after_answer != nullptr)
   {
-    uint8_t kind, sequence, fragment;
-    const uint8_t* data;
-    uint16_t size;
-  } message{kind, sequence, Fragment(), data, size};
-  Radio().TransmitBurst(
-      Link::FragmentCount(size, message.fragment),
-      +[](void* ctx, uint8_t index, uint8_t* packet) -> uint8_t
-      {
-        const auto& m = *static_cast<const Message*>(ctx);
-        return Link::BuildFragment(m.kind, m.sequence, m.data, m.size, m.fragment, index,
-                                   packet);
-      },
-      &message);
+    void (*action)() = after_answer;
+    after_answer = nullptr;
+    action();
+  }
+}
+
+// Before the radio is restarted or stopped, an answer still on air is finished.
+void FinishAnswer()
+{
+  while (Radio().ContinueBurst())
+  {
+  }
+  AnswerSent();
 }
 
 void SendPing(uint8_t kind, uint8_t sequence, uint16_t session)
@@ -90,6 +124,7 @@ void LinkInit(LinkExecutor executor, LinkExecutor control, LinkSessionEnd on_ses
 
 void LinkStart(bool gfsk, const RadioIdentity& identity)
 {
+  FinishAnswer();
   Radio().Configure(gfsk, identity);
   (void)Radio().Start();  // a failed start recovers in Poll() (sx1281.hpp)
   running = true;
@@ -98,6 +133,7 @@ void LinkStart(bool gfsk, const RadioIdentity& identity)
 
 void LinkStop()
 {
+  FinishAnswer();
   running = false;
   LinkEndRemoteSession();
 }
@@ -161,6 +197,11 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
 void LinkServeRemote()
 {
   if (!running) return;
+  if (Radio().Bursting())
+  {
+    if (Radio().ContinueBurst()) return;
+    AnswerSent();
+  }
   uint8_t packet[Sx1281::kMaxPayload];
   const int n = Radio().Poll(packet);
   const uint32_t now = NowUs();
@@ -185,7 +226,7 @@ void LinkServeRemote()
   if (cache.Has(commands.sequence()))
   {
     // The host did not get the answer: send it again instead of executing twice.
-    SendMessage(Link::kAnswer, commands.sequence(), answer, answer_size);
+    StartAnswer(commands.sequence());
     return;
   }
   Radio().PrepareTransmit();  // the switch to FS overlaps the execution
@@ -194,13 +235,7 @@ void LinkServeRemote()
                                                            sizeof(answer));
   executing = false;
   cache.Store(commands.sequence());
-  SendMessage(Link::kAnswer, commands.sequence(), answer, answer_size);
-  if (after_answer != nullptr)
-  {
-    void (*action)() = after_answer;
-    after_answer = nullptr;
-    action();
-  }
+  StartAnswer(commands.sequence());
 }
 
 void LinkEndRemoteSession()
