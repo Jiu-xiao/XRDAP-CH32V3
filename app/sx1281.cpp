@@ -8,7 +8,6 @@
 #include "ch32_spi.hpp"
 #include "fast_gpio.hpp"
 #include "libxr.hpp"
-#include "semaphore.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
 
@@ -64,12 +63,15 @@ constexpr uint8_t kTxBase = 0x00, kRxBase = 0x00;
 constexpr int8_t kPowerDbm = 0;  // the module's PA follows
 // PA ramp time code of SetTxParams (table 11-49): 8 us.
 constexpr uint8_t kRamp = 0x60;
-// SPI transfers up to this size go byte by byte through the data register instead of
-// DMA: shorter for the many small commands.
-constexpr uint16_t kSpiDmaMin = 24;
+// Every SPI transfer goes byte by byte through the data register (PolledTransfer). A
+// flag that does not come within this many polls (a few ms at 144 MHz; a byte takes
+// 0.44 us at 18 MHz) fails the transfer.
+constexpr uint32_t kSpiSpinLimit = 100'000;
 constexpr uint32_t kBusyTimeoutUs = 20'000;
 constexpr uint32_t kTxTimeoutUs = 5'000;  // the longest packet takes about 1.3 ms
 constexpr uint16_t kMaxTransfer = 3 + Sx1281::kMaxPayload;
+// CH32SPI moves larger transfers by DMA; none reach it (see PolledTransfer).
+constexpr uint16_t kSpiDmaMin = kMaxTransfer;
 // Silence recovery: enter receive again after kRearmUs without a packet, reset the radio
 // after kRestartUs.
 constexpr uint32_t kRearmUs = 100'000;
@@ -84,7 +86,8 @@ alignas(4) uint8_t dma_tx[kMaxTransfer];
 struct Hardware
 {
   // SPI1 on PA5/PA6/PA7 (APB2 = core clock), mode 0 (9.3): 144 MHz / 8 = 18 MHz, the
-  // SX1281's limit; at 216 MHz / 16 = 13.5 MHz.
+  // SX1281's limit; at 216 MHz / 16 = 13.5 MHz. CH32SPI sets up the pins, the clock and
+  // the mode; transfers go through PolledTransfer, not through CH32SPI.
   LibXR::CH32SPI spi{CH32_SPI1,
                      {dma_rx, sizeof(dma_rx)},
                      {dma_tx, sizeof(dma_tx)},
@@ -108,7 +111,6 @@ struct Hardware
                        LibXR::GPIO::Direction::INPUT};
   LibXR::CH32GPIO dio1{Board::kRadioDio1.Port(), Board::kRadioDio1.Mask(),
                        LibXR::GPIO::Direction::INPUT};
-  LibXR::Semaphore done;
 };
 
 Hardware* hw = nullptr;
@@ -123,27 +125,35 @@ FastNss fast_nss;
 FastBusy fast_busy;
 FastDio1 fast_dio1;
 
-// Short transfers bypass CH32SPI's buffers and DMA: one byte at a time through the data
+// Transfers bypass CH32SPI's buffers and DMA: one byte at a time through the data
 // register (RM SPI chapter, TXE/RXNE). Only one byte is in flight, so an interrupt in
 // the middle only stretches the transfer and cannot overrun the receive register. The
-// DMA channels stay disabled between CH32SPI transfers, so their requests do not
-// interfere.
-void PolledTransfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
+// whole transfer blocks either way, so DMA saved no time; and measured on a wdap remote
+// sampling at 100 us, a CH32SPI DMA transfer now and then stopped part way (TXE set, the
+// TX channel not refilling it), timed out and left both channels armed: the RX channel
+// then took the bytes of the following transfers, the radio received garbled commands
+// and went deaf, or a wait for RXNE never ended and the watchdog reset the board.
+bool PolledTransfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
 {
   SPI_TypeDef* spi = SPI1;
   (void)spi->DATAR;  // drop a stale byte
   for (uint16_t i = 0; i < size; ++i)
   {
+    uint32_t spins = 0;
     while ((spi->STATR & SPI_I2S_FLAG_TXE) == 0U)
     {
+      if (++spins >= kSpiSpinLimit) return false;
     }
     spi->DATAR = tx[i];
+    spins = 0;
     while ((spi->STATR & SPI_I2S_FLAG_RXNE) == 0U)
     {
+      if (++spins >= kSpiSpinLimit) return false;
     }
     const uint8_t byte = static_cast<uint8_t>(spi->DATAR);
     if (rx != nullptr) rx[i] = byte;
   }
+  return true;
 }
 
 template <typename Pin>
@@ -191,18 +201,8 @@ bool Sx1281::Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
   if (size == 0U || size > kMaxTransfer ||
       !WaitLevel(fast_busy, false, kBusyTimeoutUs, waited))
     return false;
-  bool ok = true;
   fast_nss.Write(false);
-  if (size <= kSpiDmaMin)
-  {
-    PolledTransfer(tx, rx, size);
-  }
-  else
-  {
-    LibXR::SPI::OperationRW op(hw->done, 10);
-    ok = hw->spi.ReadAndWrite({rx, rx != nullptr ? size : 0U}, {tx, size}, op, false) ==
-         LibXR::ErrorCode::OK;
-  }
+  const bool ok = PolledTransfer(tx, rx, size);
   fast_nss.Write(true);
   return ok;
 }
