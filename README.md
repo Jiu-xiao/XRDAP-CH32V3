@@ -125,7 +125,7 @@ SWD 由 GPIO 软件产生：设定值不低于不加延时路径的速度（`wda
 
 ## 4. 自己编译
 
-需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。bootloader 和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap` 或 `v305` 选板子（`v305` 沿用 XRDAP-CH32V3 的 bootloader，没有 bootloader 工程）：
+需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。bootloader 和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144` 或 `v305` 选板子（`v305` 沿用 XRDAP-CH32V3 的 bootloader，没有 bootloader 工程）：
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -136,7 +136,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-产物为 `build/bootloader-evt/bootloader.elf.bin` 和 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap v305` 一次编译三种板子的 bootloader 和应用（v305 为 `bootloader-ch32v3/` 的 stage1 和 bootloader），镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
+产物为 `build/bootloader-evt/bootloader.elf.bin` 和 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305` 一次编译这几种配置的 bootloader 和应用（v305 为 `bootloader-ch32v3/` 的 stage1 和 bootloader），镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
 
 链路协议、会话规则、配对身份、DAP 转发、设置日志和 Flash 布局是不依赖硬件的纯逻辑，在编译机上测试（CI 也运行）：
 
@@ -170,7 +170,7 @@ ctest --test-dir build/tests
 | 地址 | 内容 |
 |---|---|
 | `0x00000000`–`0x0000FFFF` | bootloader（64 KB，运行在 96 MHz） |
-| `0x00010000`–`0x0003F6FF` | 应用（`evt` 运行在 144 MHz，`wdap` 运行在 216 MHz） |
+| `0x00010000`–`0x0003F6FF` | 应用（`evt`、`wdap-144` 运行在 144 MHz，`wdap` 运行在 216 MHz） |
 | `0x0003F700`–`0x0003FEFF` | 设置区：角色、调制方式、配对，固件升级时保留 |
 | `0x0003FF00`–`0x0003FFFF` | seal：应用大小和 CRC32，由 bootloader 在 DFU 下载结束时写入 |
 
@@ -178,7 +178,7 @@ ctest --test-dir build/tests
 
 bootloader 的 DFU 下载只能写到设置区之前：超过 `0x2F700` 字节的镜像下载失败，设置区不受影响。两种 RAM 配置（FLASH 192K + RAM 128K、FLASH 256K + RAM 64K）都可用，固件按 64 KB RAM 链接；RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
 
-`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比，块读比 144 MHz 时快约 1.5 倍。时钟由板级文件选择（`boards/wdap.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`），改为 `144000000` 即回到标称频率；bootloader 运行在 96 MHz。
+`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比，块读比 144 MHz 时快约 1.5 倍。216 MHz 下芯片温度较高，长时间运行时错包率会升高。`wdap-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
 
 ### bootloader 何时停在 DFU 模式
 

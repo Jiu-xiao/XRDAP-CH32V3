@@ -125,7 +125,7 @@ The SWD clock is made in software on GPIO: a setting at or above the speed of th
 
 ## 4. Building
 
-CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The bootloader and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap` or `v305` selects the board (`v305` keeps the bootloader of XRDAP-CH32V3 and has no bootloader project):
+CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The bootloader and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144` or `v305` selects the board (`v305` keeps the bootloader of XRDAP-CH32V3 and has no bootloader project):
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -136,7 +136,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-The images are `build/bootloader-evt/bootloader.elf.bin` and `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap v305` builds the bootloader and the application for the three boards (for v305 the stage 1 and the bootloader of `bootloader-ch32v3/`) and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
+The images are `build/bootloader-evt/bootloader.elf.bin` and `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305` builds the bootloader and the application for these configurations (for v305 the stage 1 and the bootloader of `bootloader-ch32v3/`) and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
 
 The link protocol, the session rules, the pair identity, DAP forwarding, the settings log and the flash layout are pure logic without hardware and are tested on the build machine (CI runs them too):
 
@@ -170,7 +170,7 @@ Programming all 1 MiB over the wire: OpenOCD 0.12 erases in 6.8 s and programs a
 | Address | Content |
 |---|---|
 | `0x00000000`–`0x0000FFFF` | bootloader (64 KB, runs at 96 MHz) |
-| `0x00010000`–`0x0003F6FF` | application (144 MHz on `evt`, 216 MHz on `wdap`) |
+| `0x00010000`–`0x0003F6FF` | application (144 MHz on `evt` and `wdap-144`, 216 MHz on `wdap`) |
 | `0x0003F700`–`0x0003FEFF` | settings: role, modulation, pairing; kept across firmware updates |
 | `0x0003FF00`–`0x0003FFFF` | seal: application size and CRC32, written by the bootloader when a DFU download ends |
 
@@ -178,7 +178,7 @@ The application window of `v305` is `0x00002000`–`0x0001FFFF` (the layout of t
 
 A DFU download in the bootloader can only write up to the settings: an image larger than `0x2F700` bytes fails to download and the settings stay. Both RAM splits (FLASH 192K + RAM 128K, FLASH 256K + RAM 64K) work; the firmware is linked for 64 KB of RAM, and the top 256 bytes of RAM hold the boot mailbox and the watchdog count (`common/reserved_ram.h`).
 
-The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above** the CH32V307's rated 144 MHz: out-of-spec operation. It is done for the software SWD, whose speed follows the core clock: block reads run about 1.5 times as fast as at 144 MHz. The board files choose the clock (`XRDAP_APP_SYSCLK_HZ` in `boards/wdap.cmake`, implemented in `common/sysclk.c`); `144000000` returns to the rated clock. The bootloader runs at 96 MHz.
+The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above** the CH32V307's rated 144 MHz: out-of-spec operation. It is done for the software SWD, whose speed follows the core clock: block reads run about 1.5 times as fast as at 144 MHz. At 216 MHz the chip runs hotter, and the packet error rate rises over long runs. `wdap-144` is the stable version for the same board: the application runs at the rated 144 MHz, everything else is as on `wdap`. The board files choose the clock (`XRDAP_APP_SYSCLK_HZ` in `boards/wdap.cmake` and `boards/wdap-144.cmake`, implemented in `common/sysclk.c`). The bootloader runs at 96 MHz.
 
 ### When the bootloader stays in DFU mode
 
