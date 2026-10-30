@@ -18,11 +18,20 @@ using Link::kMaxMessage;
 // passed. Each answer packet that arrives extends the wait by kFragmentWaitUs, so a long
 // answer is not cut off. A command sent again while the remote still executes it is
 // harmless: the remote answers it from its cache.
+//
+// A deaf receiver: measured on a wdap pair under back-to-back 1 KB reads (about once per
+// 50 s), the host's SX1281 stops receiving while its transmit still works: it stays in
+// receive with no IRQ at all, not even PreambleDetected, while the remote hears every
+// resend and answers it; entering receive again does not help, a reset does. After
+// kDeafSends sends and kDeafUs without any packet, good or bad (a lossy link still brings
+// some), the forward resets the radio once and goes on.
 constexpr uint32_t kFirstWaitUs = 3'000;
 constexpr uint32_t kFragmentWaitUs = 3'000;
 constexpr uint32_t kMaxWaitUs = 200'000;
 constexpr uint32_t kBudgetUs = 1'000'000;
 constexpr uint32_t kPingWaitUs = 3'000;
+constexpr uint32_t kDeafSends = 3;
+constexpr uint32_t kDeafUs = 60'000;
 
 LinkExecutor execute = nullptr;
 LinkExecutor control_execute = nullptr;
@@ -172,13 +181,18 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
   uint8_t packet[Sx1281::kMaxPayload];
   uint32_t wait = kFirstWaitUs + execution_us;
   const uint32_t begin = NowUs();
+  uint32_t sends = 0;
+  uint32_t heard = begin;  // last packet of any kind, good or bad
+  bool reset = false;
   while (NowUs() - begin < budget)
   {
     SendMessage(control ? Link::kControl : Link::kCommand, sequence, req, req_len);
+    ++sends;
     uint32_t deadline = NowUs() + wait;
     while (static_cast<int32_t>(deadline - NowUs()) > 0)
     {
       const int n = Radio().Poll(packet);
+      if (n != 0) heard = NowUs();
       if (n < kHeader || packet[0] != Link::kAnswer || packet[1] != sequence) continue;
       if (answers.Add(packet, n, Fragment()) == Link::Reassembler::Result::COMPLETE)
       {
@@ -188,6 +202,11 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
         return true;
       }
       deadline = NowUs() + kFragmentWaitUs;
+    }
+    if (!reset && sends >= kDeafSends && NowUs() - heard >= kDeafUs)
+    {
+      (void)Radio().Start();  // a failed start recovers in Poll() (sx1281.hpp)
+      reset = true;
     }
     wait = wait * 2U < kMaxWaitUs ? wait * 2U : kMaxWaitUs;
   }
