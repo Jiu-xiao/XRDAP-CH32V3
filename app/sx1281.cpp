@@ -70,7 +70,9 @@ constexpr uint32_t kSpiSpinLimit = 100'000;
 constexpr uint32_t kBusyTimeoutUs = 20'000;
 constexpr uint32_t kTxTimeoutUs = 5'000;  // the longest packet takes about 1.3 ms
 constexpr uint16_t kMaxTransfer = 3 + Sx1281::kMaxPayload;
-// CH32SPI moves larger transfers by DMA; none reach it (see PolledTransfer).
+// CH32SPI only sets up the peripheral; no transfer goes through it (see PolledTransfer),
+// so its buffers are a token size and its DMA threshold is never reached.
+constexpr uint16_t kSpiTokenBuffer = 4;
 constexpr uint16_t kSpiDmaMin = kMaxTransfer;
 // Silence recovery: enter receive again after kRearmUs without a packet, reset the radio
 // after kRestartUs.
@@ -80,8 +82,8 @@ constexpr uint32_t kRestartUs = 2'000'000;
 constexpr uint32_t kStuckCheckUs = 1'000;
 constexpr uint32_t kStuckUs = 2'000;
 
-alignas(4) uint8_t dma_rx[kMaxTransfer];
-alignas(4) uint8_t dma_tx[kMaxTransfer];
+alignas(4) uint8_t dma_rx[kSpiTokenBuffer];
+alignas(4) uint8_t dma_tx[kSpiTokenBuffer];
 
 struct Hardware
 {
@@ -128,11 +130,9 @@ FastDio1 fast_dio1;
 // Transfers bypass CH32SPI's buffers and DMA: one byte at a time through the data
 // register (RM SPI chapter, TXE/RXNE). Only one byte is in flight, so an interrupt in
 // the middle only stretches the transfer and cannot overrun the receive register. The
-// whole transfer blocks either way, so DMA saved no time; and measured on a wdap remote
-// sampling at 100 us, a CH32SPI DMA transfer now and then stopped part way (TXE set, the
-// TX channel not refilling it), timed out and left both channels armed: the RX channel
-// then took the bytes of the following transfers, the radio received garbled commands
-// and went deaf, or a wait for RXNE never ended and the watchdog reset the board.
+// whole transfer blocks either way, so DMA would save no time. A CH32SPI DMA transfer
+// that times out also leaves both channels armed, and the RX channel then takes the
+// bytes of the following transfers; a polled transfer that fails leaves nothing behind.
 bool PolledTransfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
 {
   SPI_TypeDef* spi = SPI1;
