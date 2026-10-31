@@ -31,6 +31,9 @@
 #ifdef XRDAP_HAS_STATUS_LED
 #include "status_led.hpp"
 #endif
+#ifdef XRDAP_HAS_AB_BOOT
+#include "boot_info.hpp"
+#endif
 #ifdef XRDAP_HAS_RADIO
 #include "dap_session.hpp"
 #include "pairing.hpp"
@@ -168,6 +171,18 @@ extern "C" void app_main()
       },
       nullptr);
   DapSessionApplyConfig();
+#elif defined(XRDAP_HAS_AB_BOOT)
+  // Without the radio the control port answers BootInfo only (app/boot_info.hpp).
+  exec.SetControl(
+      +[](void*, const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+      {
+        if (req_len >= 1U && req[0] == kOpBootInfo) return BootInfoAnswer(resp, resp_cap);
+        resp[0] = req_len >= 1U ? req[0] : 0U;
+        resp[1] = Control::kStatusUnsupported;
+        return static_cast<uint16_t>(2U);
+      },
+      nullptr);
+  static Control::UsbControl<DapClass> usb_control(dap, exec);
 #endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(

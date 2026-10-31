@@ -11,6 +11,7 @@
 //   0x14 setting    store the role setting (0 auto, 1 local, 2 host, 3 remote)
 //   0x15 modulation store the modulation (0 GFSK, 1 FLRC)
 //   0x16            forget the pairing
+//   0x17            bootloader slots (app/boot_info.hpp)
 //   0x20            start pairing (as holding KEY2 for 3 s) -> 0
 //   0x30 request    send a control request (not another 0x30) to the peer over the
 //                   radio -> the peer's answer, or status 1 when it does not answer,

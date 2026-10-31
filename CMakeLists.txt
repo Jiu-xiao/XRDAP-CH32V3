@@ -4,31 +4,8 @@ cmake_minimum_required(VERSION 3.20)
 # bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|v305.
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v3.cmake")
 
-# Firmware version, reported in DAP_Info: the version below plus the commit it was built
-# from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A build from a copy
-# without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
-project(xrdap_ch32v3 VERSION 0.2.0 LANGUAGES C CXX ASM)
-if(NOT DEFINED XRDAP_GIT_REV)
-  execute_process(COMMAND git rev-parse --short=7 HEAD
-                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                  OUTPUT_VARIABLE XRDAP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE
-                  ERROR_QUIET RESULT_VARIABLE _git_result)
-  if(_git_result EQUAL 0)
-    execute_process(COMMAND git status --porcelain --untracked-files=no
-                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                    OUTPUT_VARIABLE _git_dirty OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET)
-    if(_git_dirty)
-      string(APPEND XRDAP_GIT_REV ".dirty")
-    endif()
-  else()
-    set(XRDAP_GIT_REV "")
-  endif()
-endif()
-set(XRDAP_FIRMWARE_VERSION "${PROJECT_VERSION}")
-if(XRDAP_GIT_REV)
-  string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/version.cmake")
+project(xrdap_ch32v3 VERSION ${XRDAP_VERSION} LANGUAGES C CXX ASM)
 message(STATUS "XR-DAP firmware version ${XRDAP_FIRMWARE_VERSION}")
 xrdap_setup_flags(O2)
 xrdap_setup_libraries()
@@ -61,6 +38,11 @@ if(XRDAP_HAS_RADIO)
                                    app/dap_session.cpp app/pair_identity.cpp
                                    app/radio_command.cpp app/pairing.cpp)
   target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO)
+endif()
+if(NOT XRDAP_EXTERNAL_BOOTLOADER)
+  # Stage 1 and the A/B bootloader slots (bootloader/): BootInfo reports them.
+  target_sources(xrdap.elf PRIVATE app/boot_info.cpp)
+  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_AB_BOOT)
 endif()
 if(XRDAP_HAS_STATUS_LIGHTS)
   target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)

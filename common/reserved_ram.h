@@ -23,6 +23,15 @@
 #define XRDAP_BOOT_GUARD_ADDR (XRDAP_RAM_TOP - 0x20u)
 
 /*
+ * Top - 0x18 (0x2000FFE8 with 64 KB), 2 words: running bootloader slot. The bootloader
+ * writes XRDAP_BOOT_SLOT_MAGIC and its slot (0 = A, 1 = B) before it starts the
+ * application, which reports them (control request BootInfo).
+ * 正在运行的引导槽：引导启动应用前写入魔数和自己的槽号（0 = A，1 = B），应用据此上报。
+ */
+#define XRDAP_BOOT_SLOT_ADDR (XRDAP_RAM_TOP - 0x18u)
+#define XRDAP_BOOT_SLOT_MAGIC 0x524C4258u /* "XBLR" */
+
+/*
  * Top - 0x10 (0x2000FFF0 with 64 KB), 2 words: boot request mailbox. The application
  * writes both magics and resets (DFU DETACH); the bootloader consumes them and stays in
  * DFU mode.

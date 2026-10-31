@@ -4,6 +4,9 @@
 #include <cstring>
 
 #include "boot_guard.hpp"
+#ifdef XRDAP_HAS_AB_BOOT
+#include "boot_info.hpp"
+#endif
 #include "config.hpp"
 #include "dap_session.hpp"
 #include "pairing.hpp"
@@ -83,6 +86,10 @@ uint16_t Handle(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t re
     case kOpPair:
       PairingRequest();
       return Reply(resp, op, kOk);
+#ifdef XRDAP_HAS_AB_BOOT
+    case kOpBootInfo:
+      return BootInfoAnswer(resp, resp_cap);
+#endif
     case kOpForward:
     {
       // The request for the peer is the rest; forwarding a forward is refused.

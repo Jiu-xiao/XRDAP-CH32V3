@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Build the bootloader and the application for one or more boards and collect the images
-# in build/images/<board>/. A board with the three-stage bootflow (XRDAP_EXTERNAL_BOOTLOADER
+# Build the boot chain (stage 1, the bootloader for slots A and B, boot-chain and the
+# migration image; bootloader/) and the application for one or more boards and collect
+# the images in build/images/<board>/. A board with the three-stage bootflow (XRDAP_EXTERNAL_BOOTLOADER
 # ON, v305) gets bootloader-ch32v3 (stage1 + stage-3 bootloader) instead of bootloader/.
 # Needs CMake and riscv32-wch-elf-gcc (WCH GCC 15) in PATH. Usage: tools/build.sh
 # [board...]   (default: evt wdap)
 #
-# 为一块或几块板子编译 bootloader 和应用，镜像放在 build/images/<板子>/。三段式启动的
+# 为一块或几块板子编译启动链（stage1、A/B 两个槽的 bootloader、boot-chain 和迁移镜像；
+# bootloader/）和应用，镜像放在 build/images/<板子>/。三段式启动的
 # 板子（XRDAP_EXTERNAL_BOOTLOADER ON，v305）编译 bootloader-ch32v3（stage1 + stage3
 # bootloader），不编译 bootloader/。需要 CMake 和 PATH 里的 riscv32-wch-elf-gcc（WCH GCC
 # 15）。
@@ -26,7 +28,14 @@ for board in "${BOARDS[@]}"; do
   else
     cmake -S "$ROOT/bootloader" -B "$ROOT/build/bootloader-$board" -DXRDAP_BOARD="$board"
     cmake --build "$ROOT/build/bootloader-$board" -j"$JOBS"
-    images+=(bootloader-$board/bootloader.elf.bin bootloader-$board/bootloader.elf.hex)
+    # boot-chain and the migration image need Python 3 (bootloader/CMakeLists.txt).
+    for f in stage1.bin stage1.hex bootloader-a.elf.bin bootloader-a.elf.hex \
+             bootloader-b.elf.bin bootloader-b.elf.hex boot-chain.bin boot-chain.hex \
+             migrate-to-ab.elf.bin; do
+      if [ -f "$ROOT/build/bootloader-$board/$f" ]; then
+        images+=("bootloader-$board/$f")
+      fi
+    done
   fi
   cmake -S "$ROOT" -B "$ROOT/build/app-$board" -DXRDAP_BOARD="$board"
   cmake --build "$ROOT/build/app-$board" -j"$JOBS"
