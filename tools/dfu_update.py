@@ -11,7 +11,7 @@ record and starts the new application.
   python tools/dfu_update.py build/app-evt/xrdap.elf.bin
   python tools/dfu_update.py --detach-only
 
-With the A/B boot chain (evt, wdap; bootloader/), --bootloader-dir also updates the
+With the A/B boot chain (evt, wdap, v305; bootloader/), --bootloader-dir also updates the
 bootloader: the running bootloader names the slot it can write (DFU interface 1,
 "XR-DAP bootloader slot A" or "... slot B"); when the version in the image for that slot
 differs from the running one (USB product string), the image goes to interface 1, the
@@ -20,12 +20,12 @@ application follows:
 
   python tools/dfu_update.py --bootloader-dir build/bootloader-wdap build/app-wdap/xrdap.elf.bin
 
-The v305 board keeps its three-stage bootloader (bootloader-ch32v3, 1209:3070), which does not start
-the application by itself; --run-app sends its RUN_APP request (vendor request 0x5A)
-after the download, and --upload reads the image in the application window back first:
+A v305 board with the earlier three-stage bootloader (bootloader-ch32v3, 1209:3070), which
+does not start the application by itself, migrates to the A/B boot chain with
+migrate-to-ab; --run-app sends its RUN_APP request (vendor request 0x5A) after the
+download, and --upload reads the image in the application window back first:
 
-  python tools/dfu_update.py --bootloader 1209:3070 --upload old.bin --run-app xrdap.elf.bin
-  python tools/dfu_update.py --bootloader 1209:3070 --run-app   (start it only)
+  python tools/dfu_update.py --bootloader 1209:3070 --run-app build/bootloader-v305/migrate-to-ab.elf.bin
 
 Needs pyusb and libusb-package (pip install pyusb libusb-package). On Windows the
 probe announces WinUSB, so no driver installation is required.
@@ -303,7 +303,7 @@ def main():
     ap.add_argument("--serial", help="probe serial or its tail")
     ap.add_argument("--detach-only", action="store_true", help="only restart into the bootloader")
     ap.add_argument("--bootloader", default="1209:3072",
-                    help="VID:PID of the bootloader (1209:3070: bootloader-ch32v3 on v305)")
+                    help="VID:PID of the bootloader (1209:3070: bootloader-ch32v3, before the migration)")
     ap.add_argument("--upload", metavar="FILE", help="read the current image back first")
     ap.add_argument("--run-app", action="store_true",
                     help="send RUN_APP after the download (bootloader-ch32v3)")

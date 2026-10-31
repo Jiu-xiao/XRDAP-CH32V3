@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP-V307 boot chain (evt, wdap): stage 1 at 0 and the USB DFU bootloader, linked once
+# XR-DAP boot chain (evt, wdap, v305): stage 1 at 0 and the USB DFU bootloader, linked once
 # for each bootloader slot (common/boot_slots.hpp). Bare-metal LibXR (no RTOS), runs at
-# 96 MHz. With Python 3 it also builds boot-chain.bin/.hex (stage 1 + slot A with its
-# record, tools/boot_chain.py) for the first installation.
+# 96 MHz. With Python 3 it also builds boot-chain.bin/.hex (stage 1 + the board's first
+# slot with its record, tools/boot_chain.py) for the first installation and the
+# migration image.
 get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 include("${XRDAP_ROOT}/cmake/ch32v3.cmake")
 if(XRDAP_EXTERNAL_BOOTLOADER)
@@ -68,46 +69,55 @@ foreach(_slot a b)
   add_executable(${_target} main.c bootloader.cpp "${XRDAP_ROOT}/common/sysclk.c")
   target_compile_definitions(${_target} PRIVATE XRDAP_SYSCLK_HZ=96000000 XRDAP_BL_SLOT=${_index}
                              XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}"
-                             XRDAP_VERSION_BCD=${XRDAP_VERSION_BCD} ${XRDAP_BOOT_KEY_DEFINES})
+                             XRDAP_VERSION_BCD=${XRDAP_VERSION_BCD} ${XRDAP_BOOT_KEY_DEFINES}
+                             XRDAP_BL_PRODUCT="${XRDAP_BL_PRODUCT}")
   # Family names (vendor, serial prefix) from XRDAP-Core, header only; the chip UID is this
   # repository's common/chip_uid.hpp.
   target_include_directories(${_target} PRIVATE "${XRDAP_ROOT}/xrdap-core" "${XRDAP_ROOT}/common")
   target_link_libraries(${_target} PRIVATE platform xr)
   # LibXR allocates the DFU and USB buffers from the heap at start-up.
-  xrdap_add_image(${_target} ${_base} ${_bl_image_size} 0x8000)
+  xrdap_add_image(${_target} ${_base} ${_bl_image_size} ${XRDAP_BL_HEAP_SIZE})
 endforeach()
+
+if(XRDAP_BL_FIRST_SLOT STREQUAL "b")
+  set(_first_base ${XRDAP_BL_SLOT_B_BASE})
+else()
+  set(_first_base ${XRDAP_BL_SLOT_A_BASE})
+endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
   add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/boot-chain.bin ${PROJECT_BINARY_DIR}/boot-chain.hex
+           ${PROJECT_BINARY_DIR}/boot-chain-parts.bin
     COMMAND ${Python3_EXECUTABLE} "${XRDAP_ROOT}/tools/boot_chain.py"
             --stage1 ${PROJECT_BINARY_DIR}/stage1.bin
-            --bootloader ${PROJECT_BINARY_DIR}/bootloader-a.elf.bin
-            --out ${PROJECT_BINARY_DIR}/boot-chain
-            --slot-base ${XRDAP_BL_SLOT_A_BASE} --slot-size ${XRDAP_BL_SLOT_SIZE}
+            --bootloader ${PROJECT_BINARY_DIR}/bootloader-${XRDAP_BL_FIRST_SLOT}.elf.bin
+            --out ${PROJECT_BINARY_DIR}/boot-chain --stage1-size ${XRDAP_STAGE1_SIZE}
+            --slot-base ${_first_base} --slot-size ${XRDAP_BL_SLOT_SIZE}
             --record-size ${XRDAP_BL_RECORD_SIZE}
-    DEPENDS stage1.elf bootloader-a.elf "${XRDAP_ROOT}/tools/boot_chain.py"
+    DEPENDS stage1.elf bootloader-${XRDAP_BL_FIRST_SLOT}.elf "${XRDAP_ROOT}/tools/boot_chain.py"
     VERBATIM)
   add_custom_target(boot_chain ALL DEPENDS ${PROJECT_BINARY_DIR}/boot-chain.bin)
 
-  # Migration of a board with the old single bootloader (migrate.c): an application for
-  # the old layout (0x10000) that carries boot-chain.bin.
+  # Migration of a board with the old bootloader (migrate.c): an application for the old
+  # layout (XRDAP_MIGRATE_BASE) that carries boot-chain-parts.bin (stage 1's sector and
+  # the first slot).
+  set(_migrate_defines MIGRATE_PAYLOAD=${PROJECT_BINARY_DIR}/boot-chain-parts.bin
+      MIGRATE_SLOT_BASE=${_first_base})
   add_executable(migrate-to-ab.elf migrate.c migrate_payload.S)
   set_source_files_properties(migrate_payload.S PROPERTIES OBJECT_DEPENDS
-                              ${PROJECT_BINARY_DIR}/boot-chain.bin)
-  target_compile_definitions(migrate-to-ab.elf PRIVATE
-                             MIGRATE_PAYLOAD=${PROJECT_BINARY_DIR}/boot-chain.bin)
+                              ${PROJECT_BINARY_DIR}/boot-chain-parts.bin)
+  target_compile_definitions(migrate-to-ab.elf PRIVATE ${_migrate_defines})
   target_link_libraries(migrate-to-ab.elf PRIVATE platform)
   add_dependencies(migrate-to-ab.elf boot_chain)
-  xrdap_add_image(migrate-to-ab.elf 0x00010000 0x0002F700 0x400)
+  xrdap_add_image(migrate-to-ab.elf ${XRDAP_MIGRATE_BASE} ${XRDAP_MIGRATE_SIZE} 0x400)
 
   # The same program linked at the application address of the A/B layout: a bootloader of
-  # this layout takes it as an application, and it writes boot-chain.bin again (repair
+  # this layout takes it as an application, and it writes the boot chain again (repair
   # and bring-up tool; not part of the released images).
   add_executable(rewrite-boot-chain.elf migrate.c migrate_payload.S)
-  target_compile_definitions(rewrite-boot-chain.elf PRIVATE
-                             MIGRATE_PAYLOAD=${PROJECT_BINARY_DIR}/boot-chain.bin)
+  target_compile_definitions(rewrite-boot-chain.elf PRIVATE ${_migrate_defines})
   target_link_libraries(rewrite-boot-chain.elf PRIVATE platform)
   add_dependencies(rewrite-boot-chain.elf boot_chain)
   math(EXPR _rewrite_size "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}" OUTPUT_FORMAT HEXADECIMAL)

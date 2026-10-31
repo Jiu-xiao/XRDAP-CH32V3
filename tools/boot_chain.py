@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Build the boot chain image for the first installation on a CH32V307 board.
+"""Build the boot chain image for the first installation on a CH32V307 or CH32V305 board.
 
-boot-chain.bin covers the flash from 0 to the end of bootloader slot A: stage 1 at 0, the
-slot A bootloader at its base and slot A's record (common/boot_slots.hpp) with sequence
-number 1 in the slot's last page; boot-chain.hex holds the same at the same addresses.
-Write it with the chip's own USB loader (BOOT0) or a WCH-Link, then write the
-application with tools/dfu_update.py.
+boot-chain.bin covers the flash from 0 to the end of the board's first bootloader slot
+(slot A at 0x1000 on the CH32V307, slot B at 0x2D000 on the CH32V305): stage 1 at 0, the
+bootloader at the slot base and the slot record (common/boot_slots.hpp) with sequence
+number 1 in the slot's last page. boot-chain.hex holds stage 1's sector and the slot only,
+at their addresses. Write either with the chip's own USB loader (BOOT0, CH32V307) or a
+WCH-Link, then write the application with tools/dfu_update.py. boot-chain-parts.bin is
+stage 1's sector followed by the slot, the payload of migrate-to-ab (bootloader/migrate.c).
 
   python tools/boot_chain.py --stage1 stage1.bin --bootloader bootloader-a.elf.bin --out boot-chain
 """
@@ -48,18 +50,20 @@ def record(base, image, seq, record_size):
     return (fields + version).ljust(record_size, b"\xff")
 
 
-def ihex(data, base):
+def ihex(segments):
+    """Intel HEX of [(base, data), ...]."""
     lines = []
     upper = None
-    for offset in range(0, len(data), 16):
-        address = base + offset
-        if address >> 16 != upper:
-            upper = address >> 16
-            payload = struct.pack(">BHBH", 2, 0, 4, upper)
+    for base, data in segments:
+        for offset in range(0, len(data), 16):
+            address = base + offset
+            if address >> 16 != upper:
+                upper = address >> 16
+                payload = struct.pack(">BHBH", 2, 0, 4, upper)
+                lines.append(":" + payload.hex().upper() + "%02X" % (-sum(payload) & 0xFF))
+            chunk = data[offset:offset + 16]
+            payload = struct.pack(">BHB", len(chunk), address & 0xFFFF, 0) + chunk
             lines.append(":" + payload.hex().upper() + "%02X" % (-sum(payload) & 0xFF))
-        chunk = data[offset:offset + 16]
-        payload = struct.pack(">BHB", len(chunk), address & 0xFFFF, 0) + chunk
-        lines.append(":" + payload.hex().upper() + "%02X" % (-sum(payload) & 0xFF))
     lines.append(":00000001FF")
     return "\n".join(lines) + "\n"
 
@@ -67,8 +71,10 @@ def ihex(data, base):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage1", required=True)
-    ap.add_argument("--bootloader", required=True, help="bootloader image linked for slot A")
+    ap.add_argument("--bootloader", required=True,
+                    help="bootloader image linked for the slot at --slot-base")
     ap.add_argument("--out", required=True, help="output path without extension")
+    ap.add_argument("--stage1-size", type=lambda v: int(v, 0), default=0x1000)
     ap.add_argument("--slot-base", type=lambda v: int(v, 0), default=0x1000)
     ap.add_argument("--slot-size", type=lambda v: int(v, 0), default=0xD000)
     ap.add_argument("--record-size", type=lambda v: int(v, 0), default=256)
@@ -77,24 +83,25 @@ def main():
     stage1 = open(args.stage1, "rb").read()
     image = open(args.bootloader, "rb").read()
     limit = args.slot_size - args.record_size
-    if len(stage1) > args.slot_base:
-        raise SystemExit(f"stage 1 is {len(stage1)} bytes, more than {args.slot_base:#x}")
+    if len(stage1) > args.stage1_size or args.stage1_size > args.slot_base:
+        raise SystemExit(f"stage 1 is {len(stage1)} bytes, its sector {args.stage1_size:#x}")
     if not 0 < len(image) <= limit:
-        raise SystemExit(f"the bootloader is {len(image)} bytes, slot A holds {limit}")
+        raise SystemExit(f"the bootloader is {len(image)} bytes, the slot holds {limit}")
     if struct.unpack_from("<I", image, 4)[0] != args.slot_base:
-        raise SystemExit("the bootloader is not linked for slot A")
+        raise SystemExit(f"the bootloader is not linked for the slot at {args.slot_base:#x}")
     if not image_version(image):
         raise SystemExit("the bootloader has no version marker")
 
+    sector = bytes(stage1).ljust(args.stage1_size, b"\xff")
+    slot = image.ljust(limit, b"\xff") + record(args.slot_base, image, 1, args.record_size)
     chain = bytearray(b"\xff" * (args.slot_base + args.slot_size))
-    chain[0:len(stage1)] = stage1
-    chain[args.slot_base:args.slot_base + len(image)] = image
-    rec = record(args.slot_base, image, 1, args.record_size)
-    chain[args.slot_base + limit:args.slot_base + args.slot_size] = rec
+    chain[0:len(sector)] = sector
+    chain[args.slot_base:] = slot
     open(args.out + ".bin", "wb").write(chain)
-    open(args.out + ".hex", "w").write(ihex(bytes(chain), 0))
-    print(f"{args.out}.bin: stage 1 {len(stage1)} B, slot A {len(image)} B, "
-          f"version {image_version(image).decode()}")
+    open(args.out + ".hex", "w").write(ihex([(0, sector), (args.slot_base, slot)]))
+    open(args.out + "-parts.bin", "wb").write(sector + slot)
+    print(f"{args.out}.bin: stage 1 {len(stage1)} B, slot at {args.slot_base:#x} "
+          f"{len(image)} B, version {image_version(image).decode()}")
 
 
 if __name__ == "__main__":

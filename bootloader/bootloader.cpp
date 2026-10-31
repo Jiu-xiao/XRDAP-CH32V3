@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// XR-DAP-V307 USB DFU bootloader.
+// XR-DAP USB DFU bootloader (CH32V307 boards evt and wdap, CH32V305 board v305).
 //
 // Stage 1 starts it from one of the two bootloader slots (common/boot_slots.hpp); the
 // same code is linked once for each slot (XRDAP_BL_SLOT). At every reset it decides
@@ -12,7 +12,7 @@
 // it with a slot record whose sequence number is one more than its own, and restarts in
 // DFU mode, so that stage 1 starts the new bootloader.
 //
-// XR-DAP-V307 的 USB DFU bootloader。
+// XR-DAP 的 USB DFU bootloader（CH32V307 板 evt、wdap，CH32V305 板 v305）。
 // stage1 从两个引导槽之一启动它（common/boot_slots.hpp）；同一份代码为每个槽各链接一次
 // （XRDAP_BL_SLOT）。每次复位时决定启动应用还是停留在 DFU 模式。应用经启动信箱请求
 // （DFU DETACH）、上电时按住板上的 bootloader 键，或应用区没有有效的带 seal 镜像时停留。
@@ -65,10 +65,26 @@ static_assert(Board::kBootKey.port == XRDAP_BOOT_KEY_GPIO &&
 static_assert(kAppBase % kPageSize == 0U && kAppSize % kPageSize == 0U,
               "the application window must be page aligned");
 
-// Pages from the flash start to the end of the application window; the DFU storage
-// area is the application window at its end.
+constexpr bool Disjoint(uint32_t a, uint32_t a_size, uint32_t b, uint32_t b_size)
+{
+  return a + a_size <= b || b + b_size <= a;
+}
+static_assert(Disjoint(0U, XRDAP_STAGE1_SIZE, kAppBase, kAppSize) &&
+                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[0], Slots::kSlotSize) &&
+                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[1], Slots::kSlotSize) &&
+                  Disjoint(kAppBase, kAppSize, Slots::kSlotBase[0], Slots::kSlotSize) &&
+                  Disjoint(kAppBase, kAppSize, Slots::kSlotBase[1], Slots::kSlotSize) &&
+                  Disjoint(Slots::kSlotBase[0], Slots::kSlotSize, Slots::kSlotBase[1],
+                           Slots::kSlotSize),
+              "stage 1, the slots and the application window must not overlap");
+
+// Pages from the flash start to the end of the last region in use: the application
+// window (CH32V307) or slot B above it (CH32V305).
+constexpr uint32_t Max(uint32_t a, uint32_t b) { return a > b ? a : b; }
+constexpr uint32_t kFlashEnd =
+    Max(kAppBase + kAppSize, Max(Slots::kSlotBase[0], Slots::kSlotBase[1]) + Slots::kSlotSize);
 constexpr LibXR::FlashRegion kFlashRegions[] = {
-    {kFlashBase, kPageSize, (kAppBase + kAppSize) / kPageSize}};
+    {kFlashBase, kPageSize, kFlashEnd / kPageSize}};
 
 // The application window minus the settings: erases and writes that would touch the
 // settings fail, so a DFU download larger than the image area is refused (the DFU
@@ -258,7 +274,7 @@ static_assert(sizeof(Slots::kVersionTag) == 13U, "the literal above starts with 
 
 alignas(64) uint8_t ep0_buffer[64];
 
-// Same VID:PID as the CH32V305 XR-DAP bootloader, so the existing host tools apply.
+// The same VID:PID on every board (tools/dfu_update.py); the product string names the chip.
 constexpr uint16_t kUsbVid = 0x1209;
 constexpr uint16_t kUsbPid = 0x3072;
 
@@ -360,7 +376,8 @@ void BlinkLed(uint32_t now_ms)
 {
 #ifdef XRDAP_HAS_LED
   const bool on = ((now_ms / kLedPeriodMs) & 1U) != 0U;
-  GPIO_WriteBit(Board::kLed.Port(), Board::kLed.Mask(), on ? Bit_SET : Bit_RESET);
+  GPIO_WriteBit(Board::kLed.Port(), Board::kLed.Mask(),
+                on == Board::kLedActiveHigh ? Bit_SET : Bit_RESET);
 #else
   (void)now_ms;
 #endif
@@ -399,7 +416,7 @@ extern "C" void bootloader_main()
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, XrDap::kVendorName,
-      "XR-DAP-V307 DFU " XRDAP_FIRMWARE_VERSION, XrDap::kSerialPrefix);
+      XRDAP_BL_PRODUCT " " XRDAP_FIRMWARE_VERSION, XrDap::kSerialPrefix);
   static LibXR::CH32USBOtgHS usb({{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid,
                                  XRDAP_VERSION_BCD, {&kStrings}, {{&dfu, &peer_dfu}},
                                  {XrDap::ChipUid(), XrDap::kChipUidSize});

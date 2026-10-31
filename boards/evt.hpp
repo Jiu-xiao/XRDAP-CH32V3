@@ -30,6 +30,7 @@ inline constexpr BoardPin kBootKey{kPortB, 3};
 /// bootloader 中闪烁的指示灯，高电平点亮（evt.cmake 设 XRDAP_HAS_LED）/ LED blinking in
 /// the bootloader, lit when high (evt.cmake sets XRDAP_HAS_LED).
 inline constexpr BoardPin kLed{kPortB, 4};
+inline constexpr bool kLedActiveHigh = true;
 
 /// 目标 SWD / Target SWD.
 inline constexpr BoardPin kSwclk{kPortB, 13};

@@ -77,19 +77,41 @@ if(NOT DEFINED XRDAP_RING_BYTES)
 endif()
 
 # Flash layout (CPU addresses; the flash is also mapped at 0x08000000). Stage 1 at 0
-# picks one of two bootloader slots (common/boot_slots.hpp); the application follows
-# the slots. The last XRDAP_BL_RECORD_SIZE bytes of each slot hold its slot record, the
-# last XRDAP_SEAL_SIZE bytes of the application window the DFU seal record and the
-# XRDAP_CONFIG_SIZE bytes in front of it the application's settings (app/config.hpp).
+# picks one of two bootloader slots (common/boot_slots.hpp). The last
+# XRDAP_BL_RECORD_SIZE bytes of each slot hold its slot record, the last XRDAP_SEAL_SIZE
+# bytes of the application window the DFU seal record and the XRDAP_CONFIG_SIZE bytes in
+# front of it the application's settings (app/config.hpp). The defaults are the
+# CH32V307's: the application follows the slots,
 #   0x00000-0x00FFF stage 1, 0x01000-0x0DFFF bootloader slot A, 0x0E000-0x1AFFF slot B,
 #   0x1B000-0x3FFFF application window (settings at 0x3F700, seal at 0x3FF00).
+# A board may set its own slot and application addresses (v305) and:
+#   XRDAP_BL_FIRST_SLOT   slot (a or b) that boot-chain and migrate-to-ab write
+#   XRDAP_MIGRATE_BASE/SIZE  application window and image limit of the old bootloader,
+#                         where migrate-to-ab is linked
+#   XRDAP_BL_HEAP_SIZE    heap of the bootloader
+#   XRDAP_BL_PRODUCT      USB product string of the bootloader, without the version
 set(XRDAP_STAGE1_BASE 0x00000000)
 set(XRDAP_STAGE1_SIZE 0x00001000)
-set(XRDAP_BL_SLOT_A_BASE 0x00001000)
-set(XRDAP_BL_SLOT_B_BASE 0x0000E000)
+if(NOT DEFINED XRDAP_BL_SLOT_A_BASE)
+  set(XRDAP_BL_SLOT_A_BASE 0x00001000)
+  set(XRDAP_BL_SLOT_B_BASE 0x0000E000)
+endif()
 set(XRDAP_BL_SLOT_SIZE 0x0000D000)
 set(XRDAP_BL_RECORD_SIZE 256)
-if(NOT XRDAP_EXTERNAL_BOOTLOADER)
+if(NOT DEFINED XRDAP_BL_FIRST_SLOT)
+  set(XRDAP_BL_FIRST_SLOT a)
+endif()
+if(NOT DEFINED XRDAP_MIGRATE_BASE)
+  set(XRDAP_MIGRATE_BASE 0x00010000)
+  set(XRDAP_MIGRATE_SIZE 0x0002F700)
+endif()
+if(NOT DEFINED XRDAP_BL_HEAP_SIZE)
+  set(XRDAP_BL_HEAP_SIZE 0x8000)
+endif()
+if(NOT DEFINED XRDAP_BL_PRODUCT)
+  set(XRDAP_BL_PRODUCT "XR-DAP-V307 DFU")
+endif()
+if(NOT XRDAP_EXTERNAL_BOOTLOADER AND NOT DEFINED XRDAP_APP_BASE)
   set(XRDAP_APP_BASE 0x0001B000)
   set(XRDAP_APP_SIZE 0x00025000)
 endif()
@@ -136,6 +158,7 @@ set(XRDAP_COMMON_DEFINES
     XRDAP_APP_SIZE=${XRDAP_APP_SIZE}
     XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
     XRDAP_CONFIG_SIZE=${XRDAP_CONFIG_SIZE}
+    XRDAP_STAGE1_SIZE=${XRDAP_STAGE1_SIZE}
     XRDAP_BL_SLOT_A_BASE=${XRDAP_BL_SLOT_A_BASE}
     XRDAP_BL_SLOT_B_BASE=${XRDAP_BL_SLOT_B_BASE}
     XRDAP_BL_SLOT_SIZE=${XRDAP_BL_SLOT_SIZE}

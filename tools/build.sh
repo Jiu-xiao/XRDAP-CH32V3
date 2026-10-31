@@ -2,20 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Build the boot chain (stage 1, the bootloader for slots A and B, boot-chain and the
 # migration image; bootloader/) and the application for one or more boards and collect
-# the images in build/images/<board>/. A board with the three-stage bootflow (XRDAP_EXTERNAL_BOOTLOADER
-# ON, v305) gets bootloader-ch32v3 (stage1 + stage-3 bootloader) instead of bootloader/.
-# Needs CMake and riscv32-wch-elf-gcc (WCH GCC 15) in PATH. Usage: tools/build.sh
-# [board...]   (default: evt wdap)
+# the images in build/images/<board>/. A board that keeps another project's bootloader
+# (XRDAP_EXTERNAL_BOOTLOADER ON) gets bootloader-ch32v3 (stage1 + stage-3 bootloader)
+# instead of bootloader/. Needs CMake and riscv32-wch-elf-gcc (WCH GCC 15) in PATH.
+# Usage: tools/build.sh [board...]   (default: evt wdap v305)
 #
 # 为一块或几块板子编译启动链（stage1、A/B 两个槽的 bootloader、boot-chain 和迁移镜像；
-# bootloader/）和应用，镜像放在 build/images/<板子>/。三段式启动的
-# 板子（XRDAP_EXTERNAL_BOOTLOADER ON，v305）编译 bootloader-ch32v3（stage1 + stage3
-# bootloader），不编译 bootloader/。需要 CMake 和 PATH 里的 riscv32-wch-elf-gcc（WCH GCC
-# 15）。
+# bootloader/）和应用，镜像放在 build/images/<板子>/。沿用其他项目 bootloader 的板子
+# （XRDAP_EXTERNAL_BOOTLOADER ON）编译 bootloader-ch32v3（stage1 + stage3 bootloader），不编译
+# bootloader/。需要 CMake 和 PATH 里的 riscv32-wch-elf-gcc（WCH GCC 15）。
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOARDS=("$@")
-[ ${#BOARDS[@]} -eq 0 ] && BOARDS=(evt wdap)
+[ ${#BOARDS[@]} -eq 0 ] && BOARDS=(evt wdap v305)
 JOBS=$(nproc 2>/dev/null || echo 4)
 
 for board in "${BOARDS[@]}"; do

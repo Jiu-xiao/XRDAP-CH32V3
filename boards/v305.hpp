@@ -35,8 +35,9 @@ inline constexpr char kUsbProductName[] = "XR-DAP-V305 CMSIS-DAP";
 /// and bcdDevice.
 inline constexpr uint16_t kUsbBcd = 0x0600;
 
-/// IAP 键：上电时按住，bootloader-ch32v3 停在 DFU；低电平有效 / IAP key: held
-/// at power-up, bootloader-ch32v3 stays in DFU; active low.
+/// IAP 键：上电时按住进入 bootloader（两个引导槽都有效时进旧的那个），低电平有效，内部
+/// 上拉 / IAP key: held at power-up to stay in the bootloader (the older one when both
+/// bootloader slots are valid); active low with the internal pull-up.
 inline constexpr BoardPin kBootKey{kPortC, 7};
 
 /// 指示灯，低电平点亮（与 PA8 合封；bootloader 用它闪烁）/ LED, lit when low (bonded
