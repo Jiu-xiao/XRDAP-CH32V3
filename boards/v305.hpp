@@ -35,9 +35,11 @@ inline constexpr char kUsbProductName[] = "XR-DAP-V305 CMSIS-DAP";
 /// and bcdDevice.
 inline constexpr uint16_t kUsbBcd = 0x0600;
 
-/// IAP 键：上电时按住进入 bootloader（两个引导槽都有效时进旧的那个），低电平有效，内部
-/// 上拉 / IAP key: held at power-up to stay in the bootloader (the older one when both
-/// bootloader slots are valid); active low with the internal pull-up.
+/// IAP 键（WCH-LinkE-R0-1v3 原理图的 S1，外部 10K 上拉）：上电时按住进入 bootloader（两个
+/// 引导槽都有效时进旧的那个），低电平有效。另一颗 ModeS 键（S2）接晶振输出 PD1，不用 /
+/// IAP key (S1 on the WCH-LinkE-R0-1v3 schematic, external 10K pull-up): held at power-up
+/// to stay in the bootloader (the older one when both bootloader slots are valid); active
+/// low. The other key, ModeS (S2), is on the crystal output PD1 and not used.
 inline constexpr BoardPin kBootKey{kPortC, 7};
 
 /// 指示灯，低电平点亮（与 PA8 合封；bootloader 用它闪烁）/ LED, lit when low (bonded
