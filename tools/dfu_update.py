@@ -11,6 +11,15 @@ record and starts the new application.
   python tools/dfu_update.py build/app-evt/xrdap.elf.bin
   python tools/dfu_update.py --detach-only
 
+With the A/B boot chain (evt, wdap; bootloader/), --bootloader-dir also updates the
+bootloader: the running bootloader names the slot it can write (DFU interface 1,
+"XR-DAP bootloader slot A" or "... slot B"); when the version in the image for that slot
+differs from the running one (USB product string), the image goes to interface 1, the
+bootloader closes the slot and restarts in DFU mode under the new bootloader, and the
+application follows:
+
+  python tools/dfu_update.py --bootloader-dir build/bootloader-wdap build/app-wdap/xrdap.elf.bin
+
 The v305 board keeps its three-stage bootloader (bootloader-ch32v3, 1209:3070), which does not start
 the application by itself; --run-app sends its RUN_APP request (vendor request 0x5A)
 after the download, and --upload reads the image in the application window back first:
@@ -23,6 +32,7 @@ probe announces WinUSB, so no driver installation is required.
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -37,6 +47,9 @@ DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
 DFU_DETACH, DFU_DNLOAD, DFU_UPLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 2, 3, 4, 6
 RUN_APP = 0x5A  # bootloader-ch32v3: start the application (vendor, interface)
 STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
+APP_INTERFACE = "XR-DAP application"
+SLOT_INTERFACE = "XR-DAP bootloader slot "
+VERSION_TAG = b"XRDAP-BLVER:"
 OUT = usb.util.CTRL_OUT | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 IN = usb.util.CTRL_IN | usb.util.CTRL_TYPE_CLASS | usb.util.CTRL_RECIPIENT_INTERFACE
 
@@ -63,12 +76,22 @@ def find(ids, serial=None):
     return None
 
 
-def dfu_interface(dev):
-    """Returns (interface number, wTransferSize) of the device's DFU interface."""
+def interface_name(dev, intf):
+    try:
+        return usb.util.get_string(dev, intf.iInterface) if intf.iInterface else ""
+    except (ValueError, usb.core.USBError):
+        return ""
+
+
+def dfu_interface(dev, name=None):
+    """Returns (interface number, wTransferSize) of the device's DFU interface; with name,
+    of the one whose interface string starts with it."""
     # dev[0]: the descriptor of the only configuration. Windows cannot report the active
     # configuration of a composite device whose parent has no WinUSB driver.
     for intf in dev[0]:
         if intf.bInterfaceClass == DFU_CLASS and intf.bInterfaceSubClass == DFU_SUBCLASS:
+            if name is not None and not interface_name(dev, intf).startswith(name):
+                continue
             extra = bytes(intf.extra_descriptors)
             transfer = 64
             # DFU functional descriptor: bLength 9, bDescriptorType 0x21.
@@ -76,7 +99,7 @@ def dfu_interface(dev):
                 if extra[i] == 9 and extra[i + 1] == 0x21:
                     transfer = extra[i + 5] | (extra[i + 6] << 8)
             return intf.bInterfaceNumber, transfer
-    raise RuntimeError("no DFU interface")
+    raise RuntimeError("no DFU interface" + (f" named {name!r}" if name else ""))
 
 
 def get_status(dev, intf):
@@ -120,13 +143,30 @@ def detach(serial):
     app.ctrl_transfer(OUT, DFU_DETACH, 1000, intf, None, timeout=2000)
 
 
-def open_bootloader(serial):
+def open_bootloader(serial, name=None):
     dev = wait_for(BOOTLOADER_ID, serial, 30)
     if dev is None:
         raise RuntimeError(f"bootloader {BOOTLOADER_ID[0]:04x}:{BOOTLOADER_ID[1]:04x} not found")
-    intf, transfer = dfu_interface(dev)
-    usb.util.claim_interface(dev, intf)
-    return dev, intf, transfer
+    if name is None and app_interface_present(dev):
+        name = APP_INTERFACE
+    intf, transfer = dfu_interface(dev, name)
+    # A freshly enumerated DFU device may be held for a moment by another program (fwupd
+    # probes every new DFU device on Linux); wait for it.
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            usb.util.claim_interface(dev, intf)
+            return dev, intf, transfer
+        except usb.core.USBError as e:
+            if e.errno != 16 or time.monotonic() > deadline:
+                raise
+        usb.util.dispose_resources(dev)
+        time.sleep(0.3)
+        dev = wait_for(BOOTLOADER_ID, serial, 5) or dev
+
+
+def app_interface_present(dev):
+    return any(interface_name(dev, i).startswith(APP_INTERFACE) for i in dev[0])
 
 
 def to_idle(dev, intf):
@@ -172,9 +212,9 @@ def run_app(serial):
     print("RUN_APP sent")
 
 
-def download(path, serial):
+def download(path, serial, name=None):
     image = open(path, "rb").read()
-    dev, intf, transfer = open_bootloader(serial)
+    dev, intf, transfer = open_bootloader(serial, name)
     to_idle(dev, intf)
     started = time.monotonic()
     for block, offset in enumerate(range(0, len(image), transfer)):
@@ -191,12 +231,70 @@ def download(path, serial):
             status, poll_ms, state = get_status(dev, intf)
             if status != 0 or state == STATE_ERROR:
                 raise RuntimeError(f"manifest failed: status {status}, state {state}")
-            if state == STATE_MANIFEST_WAIT_RESET:
-                break
+            if state in (STATE_MANIFEST_WAIT_RESET, STATE_IDLE):
+                break  # dfuIDLE: the bootloader slot interface, which starts nothing
             time.sleep(poll_ms / 1000)
     except usb.core.USBError:
         pass  # already gone: the application is starting
     usb.util.dispose_resources(dev)
+
+
+def image_version(image):
+    """The version string after the first version marker followed by one (boot_slots.hpp)."""
+    start = 0
+    while True:
+        i = image.find(VERSION_TAG, start)
+        if i < 0:
+            return ""
+        j = i + len(VERSION_TAG)
+        if j < len(image) and image[j] != 0:
+            end = image.find(b"\0", j)
+            return image[j:end if end >= 0 else len(image)].decode(errors="replace")
+        start = i + 1
+
+
+def update_bootloader(directory, serial, force):
+    """Writes the bootloader image for the slot the running bootloader offers, when its
+    version differs (or with force); returns True when the bootloader was replaced."""
+    dev = wait_for(BOOTLOADER_ID, serial, 30)
+    if dev is None:
+        raise RuntimeError("bootloader not found")
+    slot = None
+    for intf in dev[0]:
+        name = interface_name(dev, intf)
+        if name.startswith(SLOT_INTERFACE):
+            slot = name[len(SLOT_INTERFACE):len(SLOT_INTERFACE) + 1].lower()
+    running = (dev.product or "").rsplit(" ", 1)[-1]
+    usb.util.dispose_resources(dev)
+    if slot not in ("a", "b"):
+        raise RuntimeError("this bootloader cannot replace itself (it predates the A/B boot "
+                           "chain): write boot-chain.hex with the chip's USB loader (BOOT0) "
+                           "or a WCH-Link first")
+    path = None
+    for candidate in (f"bootloader-{slot}.elf.bin", f"bootloader-{slot}.bin"):
+        full = os.path.join(directory, candidate)
+        if os.path.isfile(full):
+            path = full
+            break
+    if path is None:
+        raise RuntimeError(f"no bootloader-{slot}.elf.bin in {directory}")
+    new = image_version(open(path, "rb").read())
+    if new == running and not force:
+        print(f"bootloader {running} is current")
+        return False
+    print(f"bootloader {running} -> {new or '?'} into slot {slot.upper()}")
+    download(path, serial, SLOT_INTERFACE + slot.upper())
+    # The bootloader closes the slot, restarts in DFU mode and stage 1 starts the new one.
+    time.sleep(1.0)
+    dev = wait_for(BOOTLOADER_ID, serial, 15)
+    if dev is None:
+        raise RuntimeError("the new bootloader did not appear")
+    now = (dev.product or "").rsplit(" ", 1)[-1]
+    usb.util.dispose_resources(dev)
+    if new and now != new:
+        raise RuntimeError(f"bootloader still reports {now}, expected {new}")
+    print(f"bootloader {now} running")
+    return True
 
 
 def main():
@@ -209,13 +307,24 @@ def main():
     ap.add_argument("--upload", metavar="FILE", help="read the current image back first")
     ap.add_argument("--run-app", action="store_true",
                     help="send RUN_APP after the download (bootloader-ch32v3)")
+    ap.add_argument("--bootloader-dir", metavar="DIR",
+                    help="also update the bootloader from DIR/bootloader-a|b.elf.bin (A/B boot chain)")
+    ap.add_argument("--force-bootloader", action="store_true",
+                    help="write the bootloader even when its version is the running one")
     args = ap.parse_args()
     global BOOTLOADER_ID
     BOOTLOADER_ID = tuple(int(x, 16) for x in args.bootloader.split(":"))
     # Check the arguments before the DETACH, which leaves the probe in the bootloader.
-    if not args.image and not args.detach_only and not args.run_app:
+    if not args.image and not args.detach_only and not args.run_app and not args.bootloader_dir:
         ap.error("image is required")
     detach(args.serial)
+    if args.bootloader_dir:
+        update_bootloader(args.bootloader_dir, args.serial, args.force_bootloader)
+        if not args.image:
+            run_app(args.serial)
+            ok = wait_for(APP_ID, args.serial, 10) is not None
+            print("application running" if ok else "application did not appear")
+            return 0 if ok else 1
     if args.detach_only:
         ok = wait_for(BOOTLOADER_ID, args.serial, 10) is not None
         print("bootloader running" if ok else "bootloader did not appear")
