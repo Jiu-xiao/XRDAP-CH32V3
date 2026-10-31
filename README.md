@@ -67,7 +67,7 @@ python tools/dfu_update.py --bootloader 1209:3070 --run-app xrdap.elf.bin
 
 `dfu_update.py` 先向正在运行的应用发 DFU DETACH（应用写 RAM 顶部 `0x20007FF0` 的信箱后复位），bootloader 停在 DFU 并写入镜像和 seal，最后发 RUN_APP（厂商请求 `0x5A`）启动应用：这个 bootloader 默认不自动启动应用，上电和复位后都停在 DFU，要再发一次 RUN_APP：`python tools/dfu_update.py --bootloader 1209:3070 --run-app`（不带镜像，只启动应用）。`--upload 文件` 在写入前把应用区里原来的镜像读出来保存。板上还是早期应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，可按住 IAP 键（PC7）上电让 bootloader 停在 DFU，或用 `dfu-util -d 0d28:2041,1209:3070 -a 0 -D xrdap.elf.bin` 再 `--run-app`。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
-指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用为 144 MHz）；`boards/v305.cmake` 的 `XRDAP_APP_SYSCLK_HZ` 改为 `144000000` 即回到标称频率。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
+指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；`boards/v305.cmake` 的 `XRDAP_APP_SYSCLK_HZ` 改为 `144000000` 即回到标称频率。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
 
 ## 2. 无线调试（wdap）
 
@@ -178,7 +178,7 @@ ctest --test-dir build/tests
 
 bootloader 的 DFU 下载只能写到设置区之前：超过 `0x2F700` 字节的镜像下载失败，设置区不受影响。两种 RAM 配置（FLASH 192K + RAM 128K、FLASH 256K + RAM 64K）都可用，固件按 64 KB RAM 链接；RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
 
-`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比，块读比 144 MHz 时快约 1.5 倍。216 MHz 下芯片温度较高，长时间运行时错包率会升高。`wdap-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
+`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比。有线实测（STM32H723 目标，SWD 设为最高档）：连续读 1 KiB 的块读 216 MHz 约 713 KiB/s、144 MHz 约 505–545 KiB/s；OpenOCD 0.12 读 128 KiB flash 216 MHz 326–333 KiB/s、144 MHz 221–291 KiB/s。无线时两者都约 84–88 KiB/s，受空中速率限制。216 MHz 下芯片温度较高，长时间运行时错包率会升高。`wdap-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
 
 ### bootloader 何时停在 DFU 模式
 
