@@ -83,7 +83,7 @@ The boot chain is the one of the CH32V307 boards (see "Boot chain"); the bootloa
 
 While the board still runs the earlier application (`0d28:2041`), which the tool's DETACH does not look for, hold the IAP key at power-up so that the bootloader of the three-stage boot stays in DFU, and write the migration image. Once the application runs, PA13 and PA14 are no longer a debug port and a WCH-Link cannot reach the chip.
 
-The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); `XRDAP_APP_SYSCLK_HZ` set to `144000000` in `boards/v305.cmake` returns to the rated clock. OpenOCD 0.12 reads 128 KiB of STM32F302 flash at SWD 30 MHz at about 1174 KiB/s at 216 MHz and about 795 KiB/s at 144 MHz. The SWD timing is calibrated on this board with a cycle sweep: up to 8 MHz requested the actual clock is within -8 %/+8 % of the request, and the undelayed path (about 17–19 MHz) is used only from requests of about 19 MHz.
+The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); Under the heaviest sampling load (one variable every 25 µs, every read a full packet) the chip resets now and then at 216 MHz. `v305-144` is the stable version for the same board: the application runs at the rated 144 MHz, everything else is as on `v305`. OpenOCD 0.12 reads 128 KiB of STM32F302 flash at SWD 30 MHz at about 1174 KiB/s at 216 MHz and about 795 KiB/s at 144 MHz. The SWD timing is calibrated on this board with a cycle sweep: up to 8 MHz requested the actual clock is within -8 %/+8 % of the request, and the undelayed path (about 17–19 MHz) is used only from requests of about 19 MHz.
 
 ## 2. Wireless debugging (wdap)
 
@@ -141,7 +141,7 @@ The SWD clock is made in software on GPIO: a setting at or above the speed of th
 
 ## 4. Building
 
-CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144` or `v305` selects the board:
+CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144`, `v305` or `v305-144` selects the board:
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -152,7 +152,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
+The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
 
 The link protocol, the session rules, the pair identity, DAP forwarding, the settings log, the flash layout and the bootloader slot rules are pure logic without hardware and are tested on the build machine (CI runs them too):
 
@@ -197,7 +197,7 @@ The layout of `v305`:
 | Address | Content |
 |---|---|
 | `0x00000000`–`0x00000FFF` | stage 1 |
-| `0x00002000`–`0x0001F6FF` | application (216 MHz) |
+| `0x00002000`–`0x0001F6FF` | application (`v305` 216 MHz, `v305-144` 144 MHz) |
 | `0x0001F700`–`0x0001FEFF` | settings (the firmware does not write them) |
 | `0x0001FF00`–`0x0001FFFF` | seal |
 | `0x00020000`–`0x0002CFFF` | bootloader slot A |

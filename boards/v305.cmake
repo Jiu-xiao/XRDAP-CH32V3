@@ -5,7 +5,9 @@ set(XRDAP_HSE_HZ 12000000)
 # for the same reason: bit-banged SWD 1.5x faster (common/
 # sysclk.h). The flash has no wait states to set (code runs from the zero-wait area),
 # settings writes halve HCLK (app/config.cpp SlowBus), and the USBHS PLL runs from the
-# crystal. 144000000 returns to the rated clock, the clock of the earlier application.
+# crystal. Under the heaviest sampling load (one variable every 25 us with full-packet
+# reads) the chip resets now and then at 216 MHz; boards/v305-144.cmake is the same
+# board at the rated clock.
 set(XRDAP_APP_SYSCLK_HZ 216000000)
 # Boot chain (bootloader/): stage 1 at 0, the application window 0x2000..0x20000 in the
 # 128 KB zero-wait flash (settings at 0x1F700, seal at 0x1FF00, as with the earlier

@@ -83,7 +83,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 板上还是早期应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，按住 IAP 键上电让三段式启动的 bootloader 停在 DFU，再写迁移镜像。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
-指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；`boards/v305.cmake` 的 `XRDAP_APP_SYSCLK_HZ` 改为 `144000000` 即回到标称频率。OpenOCD 0.12 在 SWD 30 MHz 下读 STM32F302 的 128 KiB flash，216 MHz 约 1174 KiB/s，144 MHz 约 795 KiB/s。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
+指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下最重的采样负载（一个变量 25 µs 一拍、每次读满一包）偶尔会让芯片复位。`v305-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `v305` 相同。OpenOCD 0.12 在 SWD 30 MHz 下读 STM32F302 的 128 KiB flash，216 MHz 约 1174 KiB/s，144 MHz 约 795 KiB/s。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
 
 ## 2. 无线调试（wdap）
 
@@ -141,7 +141,7 @@ SWD 由 GPIO 软件产生：设定值不低于不加延时路径的速度（`wda
 
 ## 4. 自己编译
 
-需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144` 或 `v305` 选板子：
+需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144`、`v305` 或 `v305-144` 选板子：
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -152,7 +152,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
+启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
 
 链路协议、会话规则、配对身份、DAP 转发、设置日志、Flash 布局和引导槽规则是不依赖硬件的纯逻辑，在编译机上测试（CI 也运行）：
 
@@ -197,7 +197,7 @@ ctest --test-dir build/tests
 | 地址 | 内容 |
 |---|---|
 | `0x00000000`–`0x00000FFF` | stage1 |
-| `0x00002000`–`0x0001F6FF` | 应用（216 MHz） |
+| `0x00002000`–`0x0001F6FF` | 应用（`v305` 216 MHz，`v305-144` 144 MHz） |
 | `0x0001F700`–`0x0001FEFF` | 设置区（固件不写设置） |
 | `0x0001FF00`–`0x0001FFFF` | seal |
 | `0x00020000`–`0x0002CFFF` | 引导槽 A |

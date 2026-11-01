@@ -5,7 +5,7 @@
 # the images in build/images/<board>/. A board that keeps another project's bootloader
 # (XRDAP_EXTERNAL_BOOTLOADER ON) gets bootloader-ch32v3 (stage1 + stage-3 bootloader)
 # instead of bootloader/. Needs CMake and riscv32-wch-elf-gcc (WCH GCC 15) in PATH.
-# Usage: tools/build.sh [board...]   (default: evt wdap v305)
+# Usage: tools/build.sh [board...]   (default: evt wdap v305 v305-144)
 #
 # 为一块或几块板子编译启动链（stage1、A/B 两个槽的 bootloader、boot-chain 和迁移镜像；
 # bootloader/）和应用，镜像放在 build/images/<板子>/。沿用其他项目 bootloader 的板子
@@ -14,7 +14,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOARDS=("$@")
-[ ${#BOARDS[@]} -eq 0 ] && BOARDS=(evt wdap v305)
+[ ${#BOARDS[@]} -eq 0 ] && BOARDS=(evt wdap v305 v305-144)
 JOBS=$(nproc 2>/dev/null || echo 4)
 
 for board in "${BOARDS[@]}"; do
