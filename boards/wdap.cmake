@@ -4,8 +4,9 @@ set(XRDAP_HSE_HZ 12000000)
 set(XRDAP_BOOT_KEY_PORT C)
 set(XRDAP_BOOT_KEY_PIN 10)
 # The application runs at 216 MHz (12 MHz x 18), ABOVE the CH32V307's rated 144 MHz: an
-# accepted risk for 1.5x faster bit-banged SWD (common/sysclk.h). boards/wdap-144.cmake is
-# the same board at the rated clock.
+# accepted risk for 1.5x faster bit-banged SWD (common/sysclk.h). The chip runs hotter, and
+# packet errors, restarts and similar problems can occur; boards/wdap-144.cmake is the
+# same board at the rated clock.
 set(XRDAP_APP_SYSCLK_HZ 216000000)
 set(XRDAP_HAS_RADIO ON)
 # WS2812 chain on PB15 (wdap.hpp).
