@@ -83,7 +83,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 板上还是早期应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，按住 IAP 键上电让三段式启动的 bootloader 停在 DFU，再写迁移镜像。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
-指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下芯片温度较高，可能出现错包、重启等问题。`v305-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `v305` 相同。OpenOCD 0.12 在 SWD 30 MHz 下读 STM32F302 的 128 KiB flash，216 MHz 约 1174 KiB/s，144 MHz 约 795 KiB/s。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
+指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下芯片温度过高，可能出现重启等问题。`v305-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `v305` 相同。OpenOCD 0.12 在 SWD 30 MHz 下读 STM32F302 的 128 KiB flash，216 MHz 约 1174 KiB/s，144 MHz 约 795 KiB/s。SWD 时序在本板上按周期数扫描标定：请求 8 MHz 及以下时实际时钟在请求值的 -8 %/+8 % 以内，不加延时路径（约 17–19 MHz）只在请求不低于约 19 MHz 时使用。
 
 ## 2. 无线调试（wdap）
 
@@ -207,7 +207,7 @@ CH32V305FB 的数据手册写的是 128 KB flash，flash 在它之上还有，�
 
 引导的 DFU 下载只能写到设置区之前：超过 `0x24700` 字节（`v305` 为 `0x1D700`）的应用镜像下载失败，设置区不受影响。设置区和 seal 的地址与旧版单个 bootloader 的布局相同，迁移后设置保留。固件按 64 KB RAM 链接；应用区延伸到 192 KB 以上，用户选择字为 FLASH 256K + RAM 64K 时整个应用都在零等待区，FLASH 192K + RAM 128K 时超出 192 KB 的部分运行较慢。RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
 
-`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz，属于超规格运行。这样做是为了软件 SWD：速度与主频成正比。有线实测（STM32H723 目标）：OpenOCD 0.12 在 SWD 30 MHz 下读 1 MiB flash，216 MHz 约 1000–1010 KiB/s，144 MHz 约 680 KiB/s；每次发一条 1 KiB 的块读、等应答回来再发下一条，216 MHz 约 713 KiB/s，144 MHz 约 505–545 KiB/s。无线时两者都约 84–88 KiB/s，受空中速率限制。216 MHz 下芯片温度较高，可能出现错包、重启等问题。`wdap-144` 是同一块板子的稳定版本，应用跑在标称的 144 MHz，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
+`wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz。这样做是为了软件 SWD：速度与主频成正比。有线实测（STM32H723 目标）：OpenOCD 0.12 在 SWD 30 MHz 下读 1 MiB flash，216 MHz 约 1000–1010 KiB/s，144 MHz 约 680 KiB/s；每次发一条 1 KiB 的块读、等应答回来再发下一条，216 MHz 约 713 KiB/s，144 MHz 约 505–545 KiB/s。无线时两者都约 84–88 KiB/s，受空中速率限制。216 MHz 下芯片温度过高，可能出现重启等问题。`wdap-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
 
 ### 启动链
 
