@@ -4,7 +4,7 @@
 // CH32V305 board (CH32V305FBP6 in QFN28, 12 MHz crystal, the circuit of the WCH-LinkE):
 // the board of the earlier application of this repository (tag legacy-v305-app). Pins as
 // in that application (User/app_main.cpp, User/ch32_fast_gpio.hpp) and its bootloader
-// (bootloader-ch32v3/bootloader_main.cpp); package facts from CH32V307DS0.
+// (the earlier three-stage bootloader); package facts from CH32V307DS0.
 //
 // In the QFN28 package PA9 is bonded to PA13, PA1 to PA5 and PC9 to PA8 (CH32V307DS0
 // p.34 note 6, p.35 notes 15/16), and on the board PB13 is wired to PA14. The target SWD
@@ -14,12 +14,13 @@
 //
 // CH32V305 板（QFN28 封装的 CH32V305FBP6，12 MHz 晶振，电路同 WCH-LinkE），即
 // 本仓库早期应用（标签 legacy-v305-app）的板子。引脚同该应用（User/app_main.cpp、
-// User/ch32_fast_gpio.hpp）和它的 bootloader（bootloader-ch32v3/bootloader_main.cpp）。
+// User/ch32_fast_gpio.hpp）和它的 bootloader（早期的三段式 bootloader）。
 // QFN28 封装内 PA9 与 PA13、PA1 与 PA5、PC9 与 PA8 合封，板上 PB13 连到 PA14，所以目标
 // SWD 线也连着芯片自己的调试引脚 PA13/PA14：Board::Init() 关掉 SWJ，PA13/PA14 保持输入，
 // 由 PA9/PB13 驱动目标；应用运行时 WCH-Link 连不上芯片（升级走 DFU bootloader）。
 
 #include "board_pin.hpp"
+#include "ch32_gpio.hpp"
 #include "ch32v30x.h"
 
 namespace XrDap::Board
@@ -79,21 +80,14 @@ inline constexpr uint32_t kSwdFastX10 = 114;
 /// @brief 应用占用目标引脚之前调用 / Called before the application takes the target
 ///        pins.
 /// SWJ off, so that PA13/PA14 (bonded or wired to the SWD pins) stay inputs (RM
-/// AFIO_PCFR1 SWJ_CFG = 100b), and the two control pins low, in the order of
-/// the earlier application.
+/// AFIO_PCFR1 SWJ_CFG = 100b), and both target power switches on (low).
 inline void Init()
 {
-  RCC_APB2PeriphClockCmd(
-      RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB, ENABLE);
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
   GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
-  GPIO_InitTypeDef init{};
-  init.GPIO_Mode = GPIO_Mode_Out_PP;
-  init.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_ResetBits(kPowerEnable5v.Port(), kPowerEnable5v.Mask());
-  init.GPIO_Pin = kPowerEnable5v.Mask();
-  GPIO_Init(kPowerEnable5v.Port(), &init);
-  GPIO_ResetBits(kPowerEnable3v3.Port(), kPowerEnable3v3.Mask());
-  init.GPIO_Pin = kPowerEnable3v3.Mask();
-  GPIO_Init(kPowerEnable3v3.Port(), &init);
+  static LibXR::CH32GPIO power_5v(kPowerEnable5v.Port(), kPowerEnable5v.Mask());
+  static LibXR::CH32GPIO power_3v3(kPowerEnable3v3.Port(), kPowerEnable3v3.Mask());
+  power_5v.Write(false);
+  power_3v3.Write(false);
 }
 }  // namespace XrDap::Board

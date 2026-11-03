@@ -32,7 +32,7 @@ openocd -f platform/wch-riscv.cfg -c init -c halt -c "flash erase_sector wch_ris
 
 装着旧版单个 bootloader（地址 0，应用在 `0x00010000`）的板子不需要调试器：用 `dfu_update.py` 写入 `migrate-to-ab.elf.bin`，旧 bootloader 把它当作应用启动，它写入启动链后重启，新引导停在 DFU 模式。这一步约 2 s，期间断电会没有可用的引导，只能再用上面两种方式写入 `boot-chain.bin`。设置区（配对等）保留。
 
-装着三段式启动（`bootloader-ch32v3`，USB `1209:3070`）的 `v305` 同样经 DFU 迁移，用 `v305` 的 `migrate-to-ab.elf.bin`：
+装着三段式启动（USB `1209:3070`）的 `v305` 同样经 DFU 迁移，用 `v305` 的 `migrate-to-ab.elf.bin`：
 
 ```
 python tools/dfu_update.py --bootloader 1209:3070 --run-app migrate-to-ab.elf.bin
@@ -65,7 +65,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 `wdap` 板上 8 颗 WS2812B 显示调试状态，灯色按 XR-DAP 全系列共用的状态灯规则（[XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)）。上电时彩虹扫过一次。USB 已连上电脑时为红色；调试会话走无线时为蓝色（主机端，以及远端会话打开期间的远端）；都没有时为紫色；配对进行中紫色快闪。上位机经 DAP_HostStatus 报告已连接时主色与紫色来回（2 s 一次），目标运行中红蓝来回（1 s 一次）；DAP_Disconnect 或 5 s 没有任何命令时回到主色。每条 DAP 命令让灯链亮一下，并让一颗白点前进一格，命令不断时约每秒 15 次。
 
-灯由 TIM1_CH3N（PB15）的 PWM 加 DMA 驱动，每位的高电平宽度按 WS2812B-2020 数据手册的时序设置，CPU 每 20 ms 只填一次缓冲。
+灯串的数据线 PB15 是 SPI2 的 MOSI：每个数据位按 WS2812B-2020 数据手册的时序编成一串 SPI 位（SPI 时钟不超过 18 MHz），一帧经 DMA 发出，CPU 每 20 ms 编一次帧。
 
 ### CH32V305 板（v305）
 
@@ -79,7 +79,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 | 指示灯 | PC9（与 PA8 合封），低电平点亮 |
 | 上电后保持低电平 | PA5、PB12（目标供电开关） |
 
-启动链与 CH32V307 的板子相同（见"启动链"），bootloader 键是 IAP 键（WCH-LinkE 原理图上的 S1，接 PC7，外部 10K 上拉），引导停在 DFU 模式时 PC9 指示灯闪烁。板上另一颗 ModeS 键（S2）经 0 Ω 电阻接在晶振输出 PD1 上，按下时晶振停振、USB 断开，固件不用它。应用窗口与早期应用的三段式启动相同（`0x2000`–`0x20000`，设置区和 seal 在末尾），两个引导槽在 128 KB 以上（见"Flash 布局"）。写入、升级应用和引导的方法与其他板子相同；还是三段式启动的板子先按"第一次烧录"迁移，三段式启动的源码留在 `bootloader-ch32v3/`。
+启动链与 CH32V307 的板子相同（见"启动链"），bootloader 键是 IAP 键（WCH-LinkE 原理图上的 S1，接 PC7，外部 10K 上拉），引导停在 DFU 模式时 PC9 指示灯闪烁。板上另一颗 ModeS 键（S2）经 0 Ω 电阻接在晶振输出 PD1 上，按下时晶振停振、USB 断开，固件不用它。应用窗口与早期应用的三段式启动相同（`0x2000`–`0x20000`，设置区和 seal 在末尾），两个引导槽在 128 KB 以上（见"Flash 布局"）。写入、升级应用和引导的方法与其他板子相同；还是三段式启动的板子先按"第一次烧录"迁移。
 
 板上还是早期应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，按住 IAP 键上电让三段式启动的 bootloader 停在 DFU，再写迁移镜像。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
@@ -91,7 +91,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 两块板烧同一个固件，角色默认自动决定。配对过的探针没有自己的调试会话时作为远端监听无线；上位机发出 DAP_Connect 时，探针先 ping 已配对的另一块，有回应则这次会话走无线，没有回应则驱动自己的 SWD 口。所以只供电的那块是远端，被上位机打开的那块是主机端；远端不在时，主机端就是一块普通的有线探针。会话中途对端掉线时命令返回错误，不会改用本地的 SWD 口，下一次 DAP_Connect 时重新判断。DAP_Connect 之前发来的 SWJ_Clock、TransferConfigure、SWD_Configure 在会话转到无线时补发给远端。
 
-同一时间只有一条传输拥有一块探针（[XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core) 的会话主人）：远端执行无线会话时，无线对端拥有它，这期间远端自己 USB 上的命令回“忙”（标准命令 `命令号 FF`，厂商命令 `命令号 05`），DAP_Info 照常回答；反之远端被本地 USB 占用时，无线来的命令也回“忙”。无线会话结束时，它开始的采样随之停止。
+探针一次只使用一条链路（USB 或无线）由使用者保证，探针不仲裁（[XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core) 的 `docs/protocol.md`）。无线会话结束时，它开始的采样随之停止。
 
 ### 配对
 
@@ -99,7 +99,7 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 ### 设置
 
-角色、调制方式和配对结果存在应用窗口末尾的设置区（见 Flash 布局），用控制口的请求查看和修改（XRDAP-Core 的 `docs/protocol.md` 3.7.1；操作见 `app/radio_command.hpp`），不是 DAP 命令。USB 上走 EP0 厂商控制传输（`bmRequestType 0x41 / 0xC1`，请求码 1 发请求、2 取应答），射频上是 `CONTROL` 包。请求 `0x30` 把一个控制请求经无线交给对端执行，例如在主机端上同时改两块板的调制方式；没有配对时它和临时改角色的 `0x10` 回状态 4（未配对）。
+角色、调制方式和配对结果存在应用窗口末尾的设置区（见 Flash 布局，LibXR 的 `DatabaseRawSequential`），用控制口的请求查看和修改（XRDAP-Core 的 `docs/protocol.md` 3.7.1 和 8.3），不是 DAP 命令。USB 上走 EP0 厂商控制传输（`bmRequestType 0x41 / 0xC1`，请求码 1 发请求、2 取应答），射频上是 `CONTROL` 包。请求 `0x30` 把一个控制请求经无线交给对端执行，例如在主机端上同时改两块板的调制方式；没有配对时它和临时改角色的 `0x10` 回状态 4（未配对）。从 0.6 之前的固件升级上来时设置区的格式不同，两块板要重新配对。
 
 - 角色：自动（默认）、总是有线、总是主机端、总是远端。
 - 调制方式（两块板必须相同）：
@@ -108,13 +108,13 @@ DFU 模式下引导有两个接口：接口 0（`XR-DAP application`）写应用
 
 ### 链路
 
-包格式和会话规则写在 `app/link_protocol.hpp`、`app/link_session.hpp`，`tests/` 按它们检查代码。主机端等不到应答时用同一序号重发，等待时间逐次加倍；远端对同一会话里重复的序号直接重发上一条应答，不再执行一遍命令。对端 1 s 没有消息后，下一条命令先 ping，ping 不通时立即返回错误，不必等完重发的 1 s。
+包格式、会话规则和无线会话的实现在 XRDAP-Core 的 `xrdap/radio/`（`docs/protocol.md` 第 8 节），那里的主机测试按规则检查代码。主机端等不到应答时用同一序号重发，等待时间逐次加倍；远端对同一会话里重复的序号直接重发上一条应答，不再执行一遍命令。对端 1 s 没有消息后，下一条命令先 ping，ping 不通时立即返回错误，不必等完重发的 1 s。
 
 每次走无线的会话有一个 16 位会话号，主机端每开一次会话换一个，ping 里带着它。会话期间主机端 1 s 没有命令就发一次心跳 ping；DAP_Disconnect 或 5 s 收不到电脑的命令时，主机端发会话号为 0 的 ping 结束会话。远端在收到会话号 0、收到新的会话号或 3 s 收不到主机端任何包时结束会话：清掉缓存的应答和拼了一半的命令，并停止这次会话启动的采样。会话之外收到的命令不执行。
 
 SX1281 的连续接收在信道拥挤时可能卡死（数据手册勘误 16.1）；射频 100 ms 收不到任何包时重新进入接收，2 s 收不到时复位。收到的包按 GetPacketStatus 的错误字节判断 CRC（勘误 16.3）；收发结束后停在 FS 模式（SetAutoFs），缩短下一次收发的切换时间。FLRC 使用 32 位同步字 `XRDP`，配对后也不换：关掉同步字时接收端把噪声当成包，链路不通；勘误 16.4 对编码率 1 下应避开的同步字没有公开，编码率 3/4 下 `XRDP` 不在禁用范围内。
 
-一条小命令的往返约 0.6 ms，其中两次空中传输约 0.3 ms。为缩短往返：24 字节以内的 SPI 传输直接读写寄存器，不走 DMA；连续接收时 DIO1 只接收包中断，拉高即有包，不再读中断状态；远端执行命令期间、主机端收到应答后，射频提前离开接收、准备发射；PA 爬坡时间 8 µs。
+射频驱动是 xrobot-org/SX1281 模块，不带线程，由主循环推进。为缩短往返：到 SX1281 的 SPI 传输都用轮询，不走 DMA；DIO1 只接发送完成、接收完成和 CRC 错误，按电平查询；远端执行命令期间、主机端收到应答后，射频提前离开接收、准备发射；PA 爬坡时间 8 µs。
 
 两块板相距约 1 m，主机端经无线调试一块 1 MiB flash 的 Cortex-M 目标，SWD 时钟设为 30 MHz（OpenOCD 为 10 MHz）时的典型结果：
 
@@ -154,7 +154,7 @@ cmake --build build/app-evt
 
 启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。
 
-链路协议、会话规则、配对身份、DAP 转发、设置日志、Flash 布局和引导槽规则是不依赖硬件的纯逻辑，在编译机上测试（CI 也运行）：
+Flash 布局和引导槽规则是不依赖硬件的纯逻辑，在编译机上测试（CI 也运行；无线链路的逻辑在 XRDAP-Core 里测试）：
 
 ```
 cmake -S tests -B build/tests
@@ -223,11 +223,11 @@ CH32V305FB 的数据手册写的是 128 KB flash，flash 在它之上还有，�
 
 ### 板子文件
 
-`boards/<名字>.cmake` 写晶振频率、bootloader 键（`XRDAP_BOOT_KEY_PORT`、`XRDAP_BOOT_KEY_PIN`，stage1 也读它）、应用主频、板上有哪些部件（`XRDAP_HAS_LED`、`XRDAP_HAS_RADIO`、`XRDAP_HAS_STATUS_LIGHTS`、`XRDAP_HAS_STATUS_LED`）、芯片与默认（CH32V307）不同时的 Flash 布局和引导参数（应用窗口、引导槽地址、首个槽、引导的堆和产品串、启动信箱魔数，例子见 `boards/v305.cmake`）、是否沿用别的工程的 bootloader（`XRDAP_EXTERNAL_BOOTLOADER`）以及芯片内存和各缓冲区大小（`XRDAP_RAM_SIZE`、`XRDAP_RTOS_HEAP_SIZE` 等，默认值和含义见 `cmake/ch32v3.cmake`），`boards/<名字>.hpp` 写 bootloader 键、指示灯、状态灯、射频、目标引脚、SWD 时序和占用引脚前的初始化（`Board::Init()`）。增加一种板子只需要这两个文件。
+`boards/<名字>.cmake` 写晶振频率、bootloader 键（`XRDAP_BOOT_KEY_PORT`、`XRDAP_BOOT_KEY_PIN`，stage1 也读它）、应用主频、引导里的指示灯（`XRDAP_HAS_LED`）、应用的组装文件（`XRDAP_BOARD_APP`，即 `boards/<名字>.cpp`）和它用到的部件源文件（`XRDAP_BOARD_SOURCES`）、芯片与默认（CH32V307）不同时的 Flash 布局和引导参数（应用窗口、引导槽地址、首个槽、引导的堆和产品串、启动信箱魔数，例子见 `boards/v305.cmake`）以及芯片内存和各缓冲区大小（`XRDAP_RAM_SIZE`、`XRDAP_C_HEAP_SIZE` 等，默认值和含义见 `cmake/ch32v3.cmake`），`boards/<名字>.hpp` 写 bootloader 键、指示灯、状态灯、射频、目标引脚、SWD 时序和占用引脚前的初始化（`Board::Init()`），`boards/<名字>.cpp` 构造公共的探针部分（`app/probe.hpp`）和这块板另有的部件（无线、状态灯等，`app/part.hpp`），再运行主循环。增加一种板子需要这三个文件。
 
 ### libxr 版本
 
-`libxr` 子模块跟随 `feat/xrdap-r2-swd-loop` 分支，本项目用到的修正都在这个分支上：CH32 USBHS 在复位时把高速连接读成全速（Windows 判定配置描述符无效）；DFU 类自带一份 MS OS 2.0 描述符，与 DAP 组成复合设备时 Windows 无法启动；USBHS 在多包 IN 传输中把已发出的包再发一遍，超过 512 字节的 DAP 应答因此错位；DFU 轮询期限和 EP0 解除 STALL；检查已投递的 AP 写时读 RDBUFF，等写入完成再停时钟，目标忙时高速烧写不丢数据。
+`libxr` 子模块跟随 `release/0.6-candidate` 分支，本项目用到的修正都在这个分支上：CH32 USBHS 在复位时把高速连接读成全速（Windows 判定配置描述符无效）；DFU 类自带一份 MS OS 2.0 描述符，与 DAP 组成复合设备时 Windows 无法启动；USBHS 在多包 IN 传输中把已发出的包再发一遍，超过 512 字节的 DAP 应答因此错位；DFU 轮询期限和 EP0 解除 STALL；检查已投递的 AP 写时读 RDBUFF，等写入完成再停时钟，目标忙时高速烧写不丢数据。
 
 ## 许可证
 

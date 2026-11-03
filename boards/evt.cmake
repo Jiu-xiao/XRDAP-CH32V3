@@ -6,3 +6,5 @@ set(XRDAP_BOOT_KEY_PIN 3)
 # LED on PB4, blinking in the bootloader (evt.hpp).
 set(XRDAP_HAS_LED ON)
 set(XRDAP_C_HEAP_SIZE 0x4000)
+# The board's composition (boards/evt.cpp); no parts beyond the common probe.
+set(XRDAP_BOARD_APP evt)

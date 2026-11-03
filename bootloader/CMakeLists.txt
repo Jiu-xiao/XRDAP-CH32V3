@@ -7,9 +7,6 @@ cmake_minimum_required(VERSION 3.20)
 # migration image.
 get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 include("${XRDAP_ROOT}/cmake/ch32v3.cmake")
-if(XRDAP_EXTERNAL_BOOTLOADER)
-  message(FATAL_ERROR "Board '${XRDAP_BOARD}' keeps another project's bootloader (XRDAP_EXTERNAL_BOOTLOADER)")
-endif()
 include("${XRDAP_ROOT}/cmake/version.cmake")
 
 project(xrdap_ch32v3_bootloader C CXX ASM)

@@ -1,46 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
-// WS2812B chain on TIM1_CH3N (PB15, default mapping, CH32V307 datasheet pin table).
-// TIM1 runs a PWM period of 1.28 us and DMA1 channel 5 (TIM1_UP request, RM table 11-2)
-// loads one compare value per bit at each update event: 0.30 us high for a 0 bit,
-// 0.65 us for a 1 bit. WS2812B-2020 datasheet p.4: T0H 220..380 ns, T1H/T0L/T1L
-// 580 ns..1 us, T0H+T0L and T1H+T1L >= 1.25 us, reset low >= 280 us; 24 bits per LED,
-// GRB, most significant bit first. A frame ends on a zero compare value, so the line
-// stays low until the next frame, which is the reset. The CPU only fills the buffer.
-//
-// TIM1_CH3N（PB15，默认映射，见 CH32V307 数据手册引脚表）上的 WS2812B 灯链。TIM1 以
-// 1.28 us 为 PWM 周期，DMA1 通道 5（TIM1_UP 请求，RM 表 11-2）在每个更新事件装入一位的
-// 比较值：0 码高 0.30 us，1 码高 0.65 us。WS2812B-2020 数据手册第 4 页：T0H 220..380 ns，
-// T1H/T0L/T1L 580 ns..1 us，T0H+T0L 与 T1H+T1L 不小于 1.25 us，复位低电平不小于 280 us；
-// 每颗 24 位，GRB 顺序，高位先发。一帧以比较值 0 结尾，线保持低电平直到下一帧，即复位。
-// CPU 只负责填缓冲。
 
+// A WS2812B chain on an SPI MOSI line. Every data bit of the chain becomes a run of SPI
+// bits: a high head of t0h or t1h SPI bits, then low up to the bit period; the SPI clock
+// is set to at most 18 MHz and the run lengths follow from it (WS2812B-2020 datasheet:
+// T0H 220..380 ns, T1H 580 ns..1 µs, T0L 580 ns..1 µs, T1L >= 580 ns, bit >= 1.25 µs).
+// A frame goes out by DMA; the line stays low between frames, which is the reset.
+//
+// SPI MOSI 线上的 WS2812B 灯串。灯串的每个数据位变成一串 SPI 位：
+// 先是 t0h 或 t1h 个高电平 SPI 位，其余为低，直到位周期结束；
+// SPI 时钟设为不超过 18 MHz，位串长度由它算出（WS2812B-2020 数据手册：
+// T0H 220..380 ns，T1H 580 ns..1 µs，T0L 580 ns..1 µs，T1L >= 580 ns，
+// 位周期 >= 1.25 µs）。一帧经 DMA 发出；帧间线保持低电平，即复位。
+
+#include <cstddef>
 #include <cstdint>
+
+#include "spi.hpp"
+#include "xrdap/light/status_light.hpp"
 
 namespace XrDap
 {
-struct Rgb
-{
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-};
 
 class Ws2812
 {
  public:
   static constexpr uint8_t kMaxLeds = 8;
+  /// 18 MHz 下一个数据位最多的 SPI 位数 / Most SPI bits per data bit at 18 MHz.
+  static constexpr uint8_t kMaxSpiBits = 23;
+  /// 一帧的字节数：前后各一个低电平字节 / Bytes of a frame: one low byte before and
+  /// after.
+  static constexpr size_t kFrameBytes = 2 + (kMaxLeds * 24 * kMaxSpiBits + 7) / 8;
 
-  /// TIM1、DMA1 通道 5 和 PB15；线为低电平 / TIM1, DMA1 channel 5 and PB15; the line
-  /// idles low.
-  static void Init();
+  /// @brief 配置 SPI 时钟并算出位串长度 / Set the SPI clock and work out the runs.
+  explicit Ws2812(LibXR::SPI& spi);
 
-  /// 上一帧还在发送 / The previous frame is still being sent.
-  static bool Busy();
+  /// @brief 发出一帧 / Send one frame.
+  /// @return OK；上一帧还在发时为 BUSY / OK; BUSY while the previous frame is still
+  ///         going out.
+  LibXR::ErrorCode Show(const Light::Rgb* leds, uint8_t count);
 
-  /// 编码并开始发送一帧，立即返回；上一帧未发完时不发送并返回 false / Encode a frame
-  /// and start sending it, returning at once; false without sending while the previous
-  /// frame is still going out.
-  static bool Show(const Rgb* leds, uint8_t count);
+ private:
+  void PutByte(uint8_t value, size_t& bit);
+
+  LibXR::SPI& spi_;
+  LibXR::SPI::OperationRW op_;
+  uint8_t bits_per_bit_ = kMaxSpiBits;
+  uint8_t t0h_ = 0;
+  uint8_t t1h_ = 0;
+  uint8_t frame_[kFrameBytes] = {};
 };
+
 }  // namespace XrDap

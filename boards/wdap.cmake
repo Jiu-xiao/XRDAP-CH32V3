@@ -8,7 +8,8 @@ set(XRDAP_BOOT_KEY_PIN 10)
 # and restarts and similar problems can occur; boards/wdap-144.cmake is the same board at
 # the rated clock.
 set(XRDAP_APP_SYSCLK_HZ 216000000)
-set(XRDAP_HAS_RADIO ON)
-# WS2812 chain on PB15 (wdap.hpp).
-set(XRDAP_HAS_STATUS_LIGHTS ON)
 set(XRDAP_C_HEAP_SIZE 0x4000)
+# The board's composition (boards/wdap.cpp) and its parts.
+set(XRDAP_BOARD_APP wdap)
+set(XRDAP_BOARD_SOURCES app/radio.cpp app/settings_store.cpp app/status_lights.cpp
+    app/ws2812.cpp)

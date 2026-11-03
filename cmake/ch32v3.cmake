@@ -2,10 +2,10 @@
 # toolchain, CPU flags, board selection, the WCH peripheral library and the image
 # helpers. Each project includes this file before project().
 #
-# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, core clock,
-# which parts the board has: XRDAP_HAS_LED, XRDAP_HAS_RADIO, XRDAP_HAS_STATUS_LIGHTS,
-# XRDAP_HAS_STATUS_LED, XRDAP_EXTERNAL_BOOTLOADER, and the memory of its chip) and
-# boards/<name>.hpp (pins used by the firmware).
+# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, core clock, the
+# bootloader's LED (XRDAP_HAS_LED), the memory of its chip, and
+# the application's composition XRDAP_BOARD_APP with its parts XRDAP_BOARD_SOURCES),
+# boards/<name>.hpp (pins used by the firmware) and boards/<XRDAP_BOARD_APP>.cpp.
 
 if(NOT DEFINED XRDAP_ROOT)
   get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -42,10 +42,6 @@ if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
 endif()
 # Chip memory and the application's share of it. The defaults are the CH32V307's 256K
 # FLASH + 64K SRAM split; a board on a smaller chip sets its own values.
-#   XRDAP_EXTERNAL_BOOTLOADER ON: the board keeps the bootloader of another project; the
-#                         board gives the application window (XRDAP_APP_BASE,
-#                         XRDAP_APP_SIZE) and the boot mailbox magics
-#                         (XRDAP_BOOT_REQUEST_MAGIC0/1), and bootloader/ is not built
 #   XRDAP_RAM_SIZE        SRAM linked
 #   XRDAP_MAIN_STACK_SIZE stack of the single loop (main() runs the application and the
 #                         interrupts run on the same stack)
@@ -53,9 +49,6 @@ endif()
 #                         objects built at start-up from it)
 #   XRDAP_DAP_PACKET_COUNT CMSIS-DAP packet count (1024-byte packets)
 #   XRDAP_RING_BYTES      sampling ring buffer (reported by vendor INFO)
-if(NOT DEFINED XRDAP_EXTERNAL_BOOTLOADER)
-  set(XRDAP_EXTERNAL_BOOTLOADER OFF)
-endif()
 if(NOT DEFINED XRDAP_BOOT_REQUEST_MAGIC0)
   set(XRDAP_BOOT_REQUEST_MAGIC0 0x50414458)  # "XDAP"
   set(XRDAP_BOOT_REQUEST_MAGIC1 0x55464442)  # "BDFU"
@@ -80,7 +73,7 @@ endif()
 # picks one of two bootloader slots (common/boot_slots.hpp). The last
 # XRDAP_BL_RECORD_SIZE bytes of each slot hold its slot record, the last XRDAP_SEAL_SIZE
 # bytes of the application window the DFU seal record and the XRDAP_CONFIG_SIZE bytes in
-# front of it the application's settings (app/config.hpp). The defaults are the
+# front of it the application's settings (app/settings_store.hpp). The defaults are the
 # CH32V307's: the application follows the slots,
 #   0x00000-0x00FFF stage 1, 0x01000-0x0DFFF bootloader slot A, 0x0E000-0x1AFFF slot B,
 #   0x1B000-0x3FFFF application window (settings at 0x3F700, seal at 0x3FF00).
@@ -111,7 +104,7 @@ endif()
 if(NOT DEFINED XRDAP_BL_PRODUCT)
   set(XRDAP_BL_PRODUCT "XR-DAP-V307 DFU")
 endif()
-if(NOT XRDAP_EXTERNAL_BOOTLOADER AND NOT DEFINED XRDAP_APP_BASE)
+if(NOT DEFINED XRDAP_APP_BASE)
   set(XRDAP_APP_BASE 0x0001B000)
   set(XRDAP_APP_SIZE 0x00025000)
 endif()

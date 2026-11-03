@@ -4,13 +4,13 @@ set(XRDAP_HSE_HZ 12000000)
 # The application runs at 216 MHz (12 MHz x 18), ABOVE the rated 144 MHz, as on wdap and
 # for the same reason: bit-banged SWD 1.5x faster (common/
 # sysclk.h). The flash has no wait states to set (code runs from the zero-wait area),
-# settings writes halve HCLK (app/config.cpp SlowBus), and the USBHS PLL runs from the
+# flash writes halve HCLK (LibXR CH32Flash), and the USBHS PLL runs from the
 # crystal. At 216 MHz the chip can run too hot, and restarts and similar problems can
 # occur; boards/v305-144.cmake is the same board at the rated clock.
 set(XRDAP_APP_SYSCLK_HZ 216000000)
 # Boot chain (bootloader/): stage 1 at 0, the application window 0x2000..0x20000 in the
 # 128 KB zero-wait flash (settings at 0x1F700, seal at 0x1FF00, as with the earlier
-# three-stage bootflow of bootloader-ch32v3), and the two bootloader slots above it, at
+# three-stage bootloader), and the two bootloader slots above it, at
 # 0x20000 and 0x2D000. The CH32V305FB data sheet gives 128 KB; the flash goes on above it
 # (the earlier stage-3 bootloader ran at 0x20000). The first installation and the migration
 # write slot B, which leaves the earlier bootloader at 0x20000 in place until stage 1 is
@@ -26,7 +26,8 @@ set(XRDAP_BOOT_KEY_PORT C)
 set(XRDAP_BOOT_KEY_PIN 7)
 set(XRDAP_BOOT_REQUEST_MAGIC0 0x5842424C)
 set(XRDAP_BOOT_REQUEST_MAGIC1 0x30335643)
-# The application window of bootloader-ch32v3, where its DFU puts migrate-to-ab.
+# The application window of the earlier three-stage bootloader, where its DFU puts
+# migrate-to-ab.
 set(XRDAP_MIGRATE_BASE 0x00002000)
 set(XRDAP_MIGRATE_SIZE 0x0001D700)
 # The bootloader in 32 KB: its LibXR objects take about 10 KB of heap.
@@ -39,6 +40,7 @@ set(XRDAP_MAIN_STACK_SIZE 3072)
 set(XRDAP_C_HEAP_SIZE 0x2000)
 set(XRDAP_DAP_PACKET_COUNT 2)
 set(XRDAP_RING_BYTES 2048)
-# The LED on PC9 shows the DAP status (v305.hpp) and blinks in the bootloader.
-set(XRDAP_HAS_STATUS_LED ON)
 set(XRDAP_HAS_LED ON)
+# The board's composition (boards/v305.cpp) and its parts.
+set(XRDAP_BOARD_APP v305)
+set(XRDAP_BOARD_SOURCES app/status_led.cpp)
