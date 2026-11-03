@@ -14,7 +14,7 @@ set(XRDAP_PLATFORM_DIR "${XRDAP_ROOT}/platform")
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -31,7 +31,7 @@ set(CMAKE_SIZE ${COMPILER_PREFIX}size)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set(XRDAP_BOARD "evt" CACHE STRING "Board configuration in boards/")
-set_property(CACHE XRDAP_BOARD PROPERTY STRINGS evt wdap v305)
+set_property(CACHE XRDAP_BOARD PROPERTY STRINGS evt wdap wdap-144 v305 v305-144)
 if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()
@@ -47,12 +47,10 @@ endif()
 #                         XRDAP_APP_SIZE) and the boot mailbox magics
 #                         (XRDAP_BOOT_REQUEST_MAGIC0/1), and bootloader/ is not built
 #   XRDAP_RAM_SIZE        SRAM linked
-#   XRDAP_RTOS_HEAP_SIZE  FreeRTOS heap (task stacks and the LibXR objects)
-#   XRDAP_APP_STACK_WORDS stack of the application task (app/main.c)
-#   XRDAP_MAIN_STACK_SIZE stack of main() before the scheduler starts (interrupts then
-#                         run on the FreeRTOS ISR stack)
-#   XRDAP_C_HEAP_SIZE     newlib heap of the application (operator new uses the FreeRTOS
-#                         heap, so nothing in the application allocates from it)
+#   XRDAP_MAIN_STACK_SIZE stack of the single loop (main() runs the application and the
+#                         interrupts run on the same stack)
+#   XRDAP_C_HEAP_SIZE     newlib heap of the application (operator new takes the LibXR
+#                         objects built at start-up from it)
 #   XRDAP_DAP_PACKET_COUNT CMSIS-DAP packet count (1024-byte packets)
 #   XRDAP_RING_BYTES      sampling ring buffer (reported by vendor INFO)
 if(NOT DEFINED XRDAP_EXTERNAL_BOOTLOADER)
@@ -64,12 +62,6 @@ if(NOT DEFINED XRDAP_BOOT_REQUEST_MAGIC0)
 endif()
 if(NOT DEFINED XRDAP_RAM_SIZE)
   set(XRDAP_RAM_SIZE 0x10000)
-endif()
-if(NOT DEFINED XRDAP_RTOS_HEAP_SIZE)
-  set(XRDAP_RTOS_HEAP_SIZE 34816)
-endif()
-if(NOT DEFINED XRDAP_APP_STACK_WORDS)
-  set(XRDAP_APP_STACK_WORDS 1536)
 endif()
 if(NOT DEFINED XRDAP_MAIN_STACK_SIZE)
   set(XRDAP_MAIN_STACK_SIZE 4096)
@@ -84,15 +76,44 @@ if(NOT DEFINED XRDAP_RING_BYTES)
   set(XRDAP_RING_BYTES 4096)
 endif()
 
-# Flash layout (CPU addresses; the flash is also mapped at 0x08000000). The
-# bootloader starts at 0 and the application right after it; the last
-# XRDAP_SEAL_SIZE bytes of the application window hold the DFU seal record and the
-# XRDAP_CONFIG_SIZE bytes in front of it the application's settings (app/config.hpp).
-set(XRDAP_BOOTLOADER_BASE 0x00000000)
-set(XRDAP_BOOTLOADER_SIZE 0x00010000)
-if(NOT XRDAP_EXTERNAL_BOOTLOADER)
-  set(XRDAP_APP_BASE 0x00010000)
-  set(XRDAP_APP_SIZE 0x00030000)
+# Flash layout (CPU addresses; the flash is also mapped at 0x08000000). Stage 1 at 0
+# picks one of two bootloader slots (common/boot_slots.hpp). The last
+# XRDAP_BL_RECORD_SIZE bytes of each slot hold its slot record, the last XRDAP_SEAL_SIZE
+# bytes of the application window the DFU seal record and the XRDAP_CONFIG_SIZE bytes in
+# front of it the application's settings (app/config.hpp). The defaults are the
+# CH32V307's: the application follows the slots,
+#   0x00000-0x00FFF stage 1, 0x01000-0x0DFFF bootloader slot A, 0x0E000-0x1AFFF slot B,
+#   0x1B000-0x3FFFF application window (settings at 0x3F700, seal at 0x3FF00).
+# A board may set its own slot and application addresses (v305) and:
+#   XRDAP_BL_FIRST_SLOT   slot (a or b) that boot-chain and migrate-to-ab write
+#   XRDAP_MIGRATE_BASE/SIZE  application window and image limit of the old bootloader,
+#                         where migrate-to-ab is linked
+#   XRDAP_BL_HEAP_SIZE    heap of the bootloader
+#   XRDAP_BL_PRODUCT      USB product string of the bootloader, without the version
+set(XRDAP_STAGE1_BASE 0x00000000)
+set(XRDAP_STAGE1_SIZE 0x00001000)
+if(NOT DEFINED XRDAP_BL_SLOT_A_BASE)
+  set(XRDAP_BL_SLOT_A_BASE 0x00001000)
+  set(XRDAP_BL_SLOT_B_BASE 0x0000E000)
+endif()
+set(XRDAP_BL_SLOT_SIZE 0x0000D000)
+set(XRDAP_BL_RECORD_SIZE 256)
+if(NOT DEFINED XRDAP_BL_FIRST_SLOT)
+  set(XRDAP_BL_FIRST_SLOT a)
+endif()
+if(NOT DEFINED XRDAP_MIGRATE_BASE)
+  set(XRDAP_MIGRATE_BASE 0x00010000)
+  set(XRDAP_MIGRATE_SIZE 0x0002F700)
+endif()
+if(NOT DEFINED XRDAP_BL_HEAP_SIZE)
+  set(XRDAP_BL_HEAP_SIZE 0x8000)
+endif()
+if(NOT DEFINED XRDAP_BL_PRODUCT)
+  set(XRDAP_BL_PRODUCT "XR-DAP-V307 DFU")
+endif()
+if(NOT XRDAP_EXTERNAL_BOOTLOADER AND NOT DEFINED XRDAP_APP_BASE)
+  set(XRDAP_APP_BASE 0x0001B000)
+  set(XRDAP_APP_SIZE 0x00025000)
 endif()
 set(XRDAP_SEAL_SIZE 256)
 set(XRDAP_CONFIG_SIZE 2048)
@@ -137,7 +158,11 @@ set(XRDAP_COMMON_DEFINES
     XRDAP_APP_SIZE=${XRDAP_APP_SIZE}
     XRDAP_SEAL_SIZE=${XRDAP_SEAL_SIZE}
     XRDAP_CONFIG_SIZE=${XRDAP_CONFIG_SIZE}
-    XRDAP_RTOS_HEAP_SIZE=${XRDAP_RTOS_HEAP_SIZE}
+    XRDAP_STAGE1_SIZE=${XRDAP_STAGE1_SIZE}
+    XRDAP_BL_SLOT_A_BASE=${XRDAP_BL_SLOT_A_BASE}
+    XRDAP_BL_SLOT_B_BASE=${XRDAP_BL_SLOT_B_BASE}
+    XRDAP_BL_SLOT_SIZE=${XRDAP_BL_SLOT_SIZE}
+    XRDAP_BL_RECORD_SIZE=${XRDAP_BL_RECORD_SIZE}
     XRDAP_RAM_SIZE=${XRDAP_RAM_SIZE}
     XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
 if(XRDAP_HAS_LED)

@@ -18,13 +18,23 @@ using Link::kMaxMessage;
 // passed. Each answer packet that arrives extends the wait by kFragmentWaitUs, so a long
 // answer is not cut off. A command sent again while the remote still executes it is
 // harmless: the remote answers it from its cache.
+//
+// A deaf receiver: measured on a wdap pair under back-to-back 1 KB reads (about once per
+// 50 s), the host's SX1281 stops receiving while its transmit still works: it stays in
+// receive with no IRQ at all, not even PreambleDetected, while the remote hears every
+// resend and answers it; entering receive again does not help, a reset does. After
+// kDeafSends sends and kDeafUs without any packet, good or bad (a lossy link still brings
+// some), the forward resets the radio once and goes on.
 constexpr uint32_t kFirstWaitUs = 3'000;
 constexpr uint32_t kFragmentWaitUs = 3'000;
 constexpr uint32_t kMaxWaitUs = 200'000;
 constexpr uint32_t kBudgetUs = 1'000'000;
 constexpr uint32_t kPingWaitUs = 3'000;
+constexpr uint32_t kDeafSends = 3;
+constexpr uint32_t kDeafUs = 60'000;
 
 LinkExecutor execute = nullptr;
+LinkExecutor control_execute = nullptr;
 LinkSessionEnd session_end = nullptr;
 bool running = false;
 uint8_t host_sequence = 0;
@@ -46,23 +56,57 @@ uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds
 
 uint8_t Fragment() { return static_cast<uint8_t>(Radio().MaxPayload() - kHeader); }
 
+struct Message
+{
+  uint8_t kind, sequence, fragment;
+  const uint8_t* data;
+  uint16_t size;
+};
+
+uint8_t FillFragment(void* ctx, uint8_t index, uint8_t* packet)
+{
+  const auto& m = *static_cast<const Message*>(ctx);
+  return Link::BuildFragment(m.kind, m.sequence, m.data, m.size, m.fragment, index,
+                             packet);
+}
+
 void SendMessage(uint8_t kind, uint8_t sequence, const uint8_t* data, uint16_t size)
 {
-  struct Message
+  Message message{kind, sequence, Fragment(), data, size};
+  Radio().TransmitBurst(Link::FragmentCount(size, message.fragment), &FillFragment,
+                        &message);
+}
+
+// The remote's answer goes out while the main loop keeps running (sampling, USB): the
+// burst only starts here, LinkServeRemote() advances it, and the message outlives the
+// call.
+Message answer_message{};
+
+void StartAnswer(uint8_t sequence)
+{
+  answer_message = {Link::kAnswer, sequence, Fragment(), answer, answer_size};
+  Radio().StartBurst(Link::FragmentCount(answer_size, answer_message.fragment),
+                     &FillFragment, &answer_message);
+}
+
+// After the whole answer is on air: settings changed by the command take effect now.
+void AnswerSent()
+{
+  if (after_answer != nullptr)
   {
-    uint8_t kind, sequence, fragment;
-    const uint8_t* data;
-    uint16_t size;
-  } message{kind, sequence, Fragment(), data, size};
-  Radio().TransmitBurst(
-      Link::FragmentCount(size, message.fragment),
-      +[](void* ctx, uint8_t index, uint8_t* packet) -> uint8_t
-      {
-        const auto& m = *static_cast<const Message*>(ctx);
-        return Link::BuildFragment(m.kind, m.sequence, m.data, m.size, m.fragment, index,
-                                   packet);
-      },
-      &message);
+    void (*action)() = after_answer;
+    after_answer = nullptr;
+    action();
+  }
+}
+
+// Before the radio is restarted or stopped, an answer still on air is finished.
+void FinishAnswer()
+{
+  while (Radio().ContinueBurst())
+  {
+  }
+  AnswerSent();
 }
 
 void SendPing(uint8_t kind, uint8_t sequence, uint16_t session)
@@ -80,14 +124,16 @@ void EndSession()
 }
 }  // namespace
 
-void LinkInit(LinkExecutor executor, LinkSessionEnd on_session_end)
+void LinkInit(LinkExecutor executor, LinkExecutor control, LinkSessionEnd on_session_end)
 {
   execute = executor;
+  control_execute = control;
   session_end = on_session_end;
 }
 
 void LinkStart(bool gfsk, const RadioIdentity& identity)
 {
+  FinishAnswer();
   Radio().Configure(gfsk, identity);
   (void)Radio().Start();  // a failed start recovers in Poll() (sx1281.hpp)
   running = true;
@@ -96,6 +142,7 @@ void LinkStart(bool gfsk, const RadioIdentity& identity)
 
 void LinkStop()
 {
+  FinishAnswer();
   running = false;
   LinkEndRemoteSession();
 }
@@ -125,7 +172,7 @@ bool LinkPing(uint16_t session, uint32_t timeout_us)
 }
 
 bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap,
-                 uint16_t& out_len, uint32_t execution_us, bool more)
+                 uint16_t& out_len, uint32_t execution_us, bool more, bool control)
 {
   if (!running || req_len == 0U || req_len > kMaxMessage) return false;
   const uint8_t sequence = ++host_sequence;
@@ -134,13 +181,18 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
   uint8_t packet[Sx1281::kMaxPayload];
   uint32_t wait = kFirstWaitUs + execution_us;
   const uint32_t begin = NowUs();
+  uint32_t sends = 0;
+  uint32_t heard = begin;  // last packet of any kind, good or bad
+  bool reset = false;
   while (NowUs() - begin < budget)
   {
-    SendMessage(Link::kCommand, sequence, req, req_len);
+    SendMessage(control ? Link::kControl : Link::kCommand, sequence, req, req_len);
+    ++sends;
     uint32_t deadline = NowUs() + wait;
     while (static_cast<int32_t>(deadline - NowUs()) > 0)
     {
       const int n = Radio().Poll(packet);
+      if (n != 0) heard = NowUs();
       if (n < kHeader || packet[0] != Link::kAnswer || packet[1] != sequence) continue;
       if (answers.Add(packet, n, Fragment()) == Link::Reassembler::Result::COMPLETE)
       {
@@ -151,6 +203,11 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
       }
       deadline = NowUs() + kFragmentWaitUs;
     }
+    if (!reset && sends >= kDeafSends && NowUs() - heard >= kDeafUs)
+    {
+      (void)Radio().Start();  // a failed start recovers in Poll() (sx1281.hpp)
+      reset = true;
+    }
     wait = wait * 2U < kMaxWaitUs ? wait * 2U : kMaxWaitUs;
   }
   return false;
@@ -159,6 +216,11 @@ bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t r
 void LinkServeRemote()
 {
   if (!running) return;
+  if (Radio().Bursting())
+  {
+    if (Radio().ContinueBurst()) return;
+    AnswerSent();
+  }
   uint8_t packet[Sx1281::kMaxPayload];
   const int n = Radio().Poll(packet);
   const uint32_t now = NowUs();
@@ -176,27 +238,23 @@ void LinkServeRemote()
     SendPing(Link::kPong, sequence, lease.session());
     return;
   }
-  if (packet[0] != Link::kCommand || !lease.OnCommand(now)) return;  // R5
+  const bool is_control = packet[0] == Link::kControl;
+  if ((packet[0] != Link::kCommand && !is_control) || !lease.OnCommand(now)) return;  // R5
   if (commands.Add(packet, n, Fragment()) != Link::Reassembler::Result::COMPLETE) return;
 
   if (cache.Has(commands.sequence()))
   {
     // The host did not get the answer: send it again instead of executing twice.
-    SendMessage(Link::kAnswer, commands.sequence(), answer, answer_size);
+    StartAnswer(commands.sequence());
     return;
   }
   Radio().PrepareTransmit();  // the switch to FS overlaps the execution
   executing = true;
-  answer_size = execute(command, commands.size(), answer, sizeof(answer));
+  answer_size = (is_control ? control_execute : execute)(command, commands.size(), answer,
+                                                           sizeof(answer));
   executing = false;
   cache.Store(commands.sequence());
-  SendMessage(Link::kAnswer, commands.sequence(), answer, answer_size);
-  if (after_answer != nullptr)
-  {
-    void (*action)() = after_answer;
-    after_answer = nullptr;
-    action();
-  }
+  StartAnswer(commands.sequence());
 }
 
 void LinkEndRemoteSession()

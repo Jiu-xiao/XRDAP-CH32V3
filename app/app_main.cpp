@@ -22,13 +22,17 @@
 #include "libxr.hpp"
 #include "probe_info.hpp"
 #include "reserved_ram.h"
-#include "sampler_task.hpp"
+#include "sampler_tick.hpp"
+#include "xrdap/control/usb_control.hpp"
 #include "xrdap/session/executor.hpp"
 #ifdef XRDAP_HAS_STATUS_LIGHTS
 #include "status_lights.hpp"
 #endif
 #ifdef XRDAP_HAS_STATUS_LED
 #include "status_led.hpp"
+#endif
+#ifdef XRDAP_HAS_AB_BOOT
+#include "boot_info.hpp"
 #endif
 #ifdef XRDAP_HAS_RADIO
 #include "dap_session.hpp"
@@ -43,12 +47,6 @@ using namespace XrDap;
 
 constexpr uint16_t kDapPacketSize = 1024;
 constexpr uint8_t kDapPacketCount = XRDAP_DAP_PACKET_COUNT;  // per board (cmake)
-constexpr uint32_t kSamplerPriority = 5;
-#ifdef XRDAP_HAS_STATUS_LIGHTS
-// The DAP loop runs at 3 and does not block while the radio is in use; the light task
-// shares its priority so time slicing still runs it.
-constexpr uint32_t kLightsPriority = 3;
-#endif
 // SWD bit-bang timing in CPU cycles (LibXR SwdGpioTiming, x10), per board: one SWCLK
 // period on the delayed path costs a + b * N cycles, N delay loops per half period; the
 // path without delay costs c cycles per period.
@@ -106,7 +104,7 @@ extern "C" void app_main()
   BootGuardStart();
   Board::Init();
   static LibXR::CH32Timebase timebase;
-  LibXR::PlatformInit(3, 8192);
+  LibXR::PlatformInit();
   ConfigInit();
 
   static Swclk swclk;
@@ -121,19 +119,19 @@ extern "C" void app_main()
   FormatSerial(ChipUid(), kChipUidSize, serial);
   SetProbeInfo(dap, {kProductName, Board::kName, serial, kFirmwareVersion});
   static DfuRuntime dfu(RestartIntoBootloader);
-  // XRDAP-Core: one transport owns the probe at a time (USB, or the radio peer on a
+  // XRDAP-Core: the probe is used over one link at a time (USB, or the radio peer on a
   // remote), every DAP command goes through the executor, and the XR vendor extension
-  // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset ends
-  // the USB session. The sampling task outranks the DAP loop (priority 3).
-  static SessionOwner session;
-  session.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
-  static DapVendor vendor(swd, session);
+  // (multi-address read/write, probe-side sampling) runs behind it. A USB bus reset
+  // lapses a connection on USB. The main loop is the execution context: it runs USB commands,
+  // the radio peer's commands and sampling one after the other.
+  static DapVendor vendor(swd);
+  vendor.SetUsbResetSource(&DfuRuntime::BusResets, &dfu);
   static DapActivity activity;
-  static Executor<DapClass> exec(dap, session, vendor, activity);
-  StartSamplerTask(vendor, kSamplerPriority);
+  static Executor<DapClass> exec(dap, vendor, activity);
+  Vendor::TickTimer& sampler_timer = SamplerTimer(vendor);
 #ifdef XRDAP_HAS_STATUS_LIGHTS
   StatusLightsBegin(
-      kLightsPriority, activity,
+      activity,
       [](void* d) { return static_cast<DapClass*>(d)->IsInited(); }, &dap);
 #endif
 #ifdef XRDAP_HAS_STATUS_LED
@@ -142,32 +140,49 @@ extern "C" void app_main()
 #endif
 #ifdef XRDAP_HAS_RADIO
   Radio().Init();
-  // On a remote, the peer's commands are the RADIO transport; its session ends with the
-  // link's session (B6), which ends RADIO's ownership and the sampling it started.
+  // The probe's radio and settings are control port requests (not DAP commands): over USB
+  // as EP0 vendor requests, over the radio as the CONTROL packet kind.
+  exec.SetControl(&RadioControl, nullptr);
+  static Control::UsbControl<DapClass> usb_control(dap, exec);
+  // On a remote, the peer's commands are the RADIO link; when the link's session ends (B6)
+  // the connection on RADIO lapses and the sampling it started stops.
   DapSessionInit(
       +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
       {
         uint16_t size = 0;
-        exec.Execute(Transport::RADIO, req, req_len, resp, resp_cap, size);
+        exec.ExecuteHere(Transport::RADIO, req, req_len, resp, resp_cap, size);
         return size;
       },
-      +[]() { exec.EndSession(Transport::RADIO); });
-  // After the owner check: 0x9F is this probe's radio and settings; on the host, the
-  // session layer forwards USB commands over the radio during a wireless session.
+      +[](const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+      {
+        uint16_t size = 0;
+        exec.ControlHere(req, req_len, resp, resp_cap, size);
+        return size;
+      },
+      +[]() { exec.LinkLost(Transport::RADIO); });
+  // On the host, the session layer forwards USB commands over the radio during a wireless
+  // session.
   exec.SetForwarder(
       +[](void*, Transport t, const uint8_t* req, uint16_t len, uint8_t* resp,
           uint16_t cap, uint16_t& out)
       {
-        if (req[0] == kProbeCommand)
-        {
-          out = RadioVendorCommand(req, len, resp, cap);
-          return true;
-        }
         return t == Transport::USB &&
                DapSessionHandleUsbCommand(req, len, resp, cap, out);
       },
       nullptr);
   DapSessionApplyConfig();
+#elif defined(XRDAP_HAS_AB_BOOT)
+  // Without the radio the control port answers BootInfo only (app/boot_info.hpp).
+  exec.SetControl(
+      +[](void*, const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap)
+      {
+        if (req_len >= 1U && req[0] == kOpBootInfo) return BootInfoAnswer(resp, resp_cap);
+        resp[0] = req_len >= 1U ? req[0] : 0U;
+        resp[1] = Control::kStatusUnsupported;
+        return static_cast<uint16_t>(2U);
+      },
+      nullptr);
+  static Control::UsbControl<DapClass> usb_control(dap, exec);
 #endif
 
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
@@ -179,27 +194,31 @@ extern "C" void app_main()
   usb.Init(false);
   usb.Start(false);
 
-  // StepUsb() waits up to kStepWaitMs for a USB command (libxr WaitForWork, without
-  // holding the executor's turn) and then runs it, so a DFU DETACH is carried out from
-  // the same loop soon after its advertised timeout, and the status LED is drawn at
-  // least every kStepWaitMs. With the radio in use the loop does
-  // not wait: it serves the radio between USB commands and watches KEY2 for pairing.
+  // Run() waits up to kStepWaitMs when it has nothing to do (a USB command or the tick
+  // interrupt wakes it), so a DFU DETACH is carried out from the same loop soon after its
+  // advertised timeout, and the status LED is drawn at least every kStepWaitMs. With the radio
+  // in use the loop does not wait: it serves the radio between USB commands and watches KEY2
+  // for pairing.
   constexpr uint32_t kStepWaitMs = 10;
   for (;;)
   {
     BootGuardFeed();
+#ifdef XRDAP_HAS_STATUS_LIGHTS
+    StatusLightsPoll();
+#endif
 #ifdef XRDAP_HAS_RADIO
-    // Pairing takes the radio over; the settings then apply again either way.
-    if (PairingPoll()) DapSessionApplyConfig();
+    // Pairing takes the radio over (after an answer still on air); the settings then
+    // apply again either way.
+    if (!Radio().Bursting() && PairingPoll()) DapSessionApplyConfig();
     if (DapSessionRadioInUse())
     {
       DapSessionService();
-      (void)exec.StepUsb(0);
+      exec.Run(sampler_timer, 0);
       dfu.Process();
       continue;
     }
 #endif
-    (void)exec.StepUsb(kStepWaitMs);
+    exec.Run(sampler_timer, kStepWaitMs);
     dfu.Process();
 #ifdef XRDAP_HAS_STATUS_LED
     StatusLedUpdate();

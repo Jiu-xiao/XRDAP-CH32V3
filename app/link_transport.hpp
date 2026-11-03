@@ -37,7 +37,7 @@ using LinkSessionEnd = void (*)();
 
 /// @brief 设置执行器和会话结束回调 / Set the executor and the session-end callback.
 /// @note 启动时调用一次 / Call once at start-up.
-void LinkInit(LinkExecutor execute, LinkSessionEnd on_session_end);
+void LinkInit(LinkExecutor execute, LinkExecutor control, LinkSessionEnd on_session_end);
 
 /// @brief 用这个调制和身份（重新）启动射频；远端会话结束 / (Re)start the radio with this
 ///        modulation and identity; a remote session ends.
@@ -60,13 +60,15 @@ bool LinkPing(uint16_t session, uint32_t timeout_us);
 ///        answer.
 /// @param execution_us 远端执行它可能用的时间，加在等待时间上 / Time the remote may take
 ///        to execute it, added to the waits.
+/// @param control 发的是控制请求（包类型 CONTROL），远端交给控制处理函数 / It is a control
+///        request (packet kind CONTROL), which the remote hands to its control handler.
 /// @param more 之后还有命令：应答到达后射频提前准备发射 / More commands follow: the radio
 ///        prepares to transmit once the answer is in.
 /// @return 收到完整应答时为 true（out_len 为其长度）；1 s 加 execution_us 内没有收到时为
 ///         false / true with a complete answer (out_len its size); false when none
 ///         arrived within 1 s plus execution_us.
 bool LinkForward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap,
-                 uint16_t& out_len, uint32_t execution_us, bool more);
+                 uint16_t& out_len, uint32_t execution_us, bool more, bool control = false);
 
 /// @brief 远端：处理一个收到的包，检查租期；没有包时立即返回 / Remote: handle one
 ///        received packet and check the lease; returns at once when nothing arrived.

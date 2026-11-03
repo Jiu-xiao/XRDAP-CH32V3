@@ -10,7 +10,7 @@ The firmware is built per board; three boards are supported:
 |---|---|---|---|
 | `evt`: CH32V307 evaluation board (the board of [CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template)) | CH32V307VCT6, 8 MHz | SWCLK PB13, SWDIO PB14, NRST PB12 | key on PB3 |
 | `wdap`: the "高速无线DAP调试器" board | CH32V307RCT6, 12 MHz | 2×6 header: TCK/SWCLK (pin 3), TMS/SWDIO (pin 4), RST (pin 5) | KEY2 |
-| `v305`: the CH32V305 board of this repository's earlier application (end of section 1) | CH32V305FBP6, 12 MHz | SWCLK PB13, SWDIO PA9, NRST PC8 | three-stage bootloader (`bootloader-ch32v3`); IAP key PC7 |
+| `v305`: the CH32V305 board of this repository's earlier application (end of section 1) | CH32V305FBP6, 12 MHz | SWCLK PB13, SWDIO PA9, NRST PC8 | IAP key PC7 |
 
 ## 1. Getting started
 
@@ -20,15 +20,27 @@ Connect the target's SWCLK, SWDIO and GND to the pins above; connect one probe p
 
 ### First flashing
 
-The first time, connect a WCH-Link or WCH-LinkE (RISC-V mode) to the board's two-wire debug port (SWDIO, SWCLK, GND) and write the bootloader at address 0, for example with the WCH OpenOCD shipped with MounRiver Studio:
+The first write is the boot chain `boot-chain.bin`: stage 1 at address 0 and the board's first bootloader slot (slot A on the CH32V307, slot B on `v305`; see "Boot chain"; built by `tools/build.sh`). Connect a WCH-Link or WCH-LinkE (RISC-V mode) to the board's two-wire debug port (SWDIO, SWCLK, GND), for example with the WCH OpenOCD shipped with MounRiver Studio:
 
 ```
-openocd -f platform/wch-riscv.cfg -c init -c halt -c "flash erase_sector wch_riscv.flash 0 last" -c "program bootloader.elf.bin 0x00000000 verify" -c "reset run" -c shutdown
+openocd -f platform/wch-riscv.cfg -c init -c halt -c "flash erase_sector wch_riscv.flash 0 last" -c "program boot-chain.bin 0x00000000 verify" -c "reset run" -c shutdown
 ```
 
-A board without a debug header (such as a `wdap` with the header unpopulated) can use the chip's built-in USB download mode instead: with BOOT0 pulled high at power-up the PC sees `4348:55E0`; in WCHISPTool_CH32Vxxx, shipped with MounRiver Studio, select the CH32V307 chip and USB download, write `bootloader.elf.bin`, and leave read protection off.
+The bootloader slots of `v305` lie above 128 KB, where the WCH OpenOCD, which checks addresses against 128 KB, cannot write; WCH-LinkUtility writes `boot-chain.bin` at `0x08000000` instead.
 
-With an empty application area the bootloader stays in DFU mode and the PC sees the USB device `1209:3072` (XR-DAP-V307 DFU). Write the application as described in the next section.
+A board without a debug header (such as a `wdap` with the header unpopulated) can use the chip's built-in USB download mode instead: with BOOT0 pulled high at power-up the PC sees `4348:55E0`; write `boot-chain.bin` with WCHISPTool_CH32Vxxx, shipped with MounRiver Studio (chip CH32V307, USB download, read protection off), or with [wchisp](https://github.com/ch32-rs/wchisp) (`wchisp flash boot-chain.bin`).
+
+A board with the earlier single bootloader (at address 0, application at `0x00010000`) needs no debugger: write `migrate-to-ab.elf.bin` with `dfu_update.py`; the old bootloader starts it as an application, it writes the boot chain and restarts, and the new bootloader stays in DFU mode. This takes about 2 s; a power cut in that time leaves no working bootloader, and `boot-chain.bin` then has to be written in one of the two ways above. The settings (pairing and the rest) stay.
+
+A `v305` with the three-stage boot (`bootloader-ch32v3`, USB `1209:3070`) migrates over DFU the same way, with the `migrate-to-ab.elf.bin` of `v305`:
+
+```
+python tools/dfu_update.py --bootloader 1209:3070 --run-app migrate-to-ab.elf.bin
+```
+
+It writes slot B first and checks every page; meanwhile the old stage 1 and bootloader stay as they are, and a failure restarts into the old bootloader for another try. Stage 1 comes last, the page with its entry point last of all, so only a power cut during the few milliseconds of that page needs a WCH-Link to recover.
+
+With an empty application area the bootloader stays in DFU mode and the PC sees the USB device `1209:3072` (XR-DAP-V307 DFU, XR-DAP-V305 DFU on `v305`). Write the application as described in the next section.
 
 ### Writing and updating the application
 
@@ -39,6 +51,14 @@ python tools/dfu_update.py xrdap.elf.bin
 
 Besides the DAP interface the application has a DFU runtime interface. `dfu_update.py` sends it DFU DETACH and the probe restarts into the bootloader; with several probes connected, `--serial` selects one by its serial. Holding the board's bootloader key while plugging in USB also keeps the bootloader in DFU mode. `dfu_update.py` writes the image over standard USB DFU 1.1; the bootloader writes a check record (the seal) at the end and starts the new application. On Windows the bootloader announces WinUSB, so no driver installation is needed. dfu-util works as well (tested with 0.11; it warns that the image has no DFU suffix, which does not affect the download) and also sends DETACH first: `dfu-util -d 1d50:6199,1209:3072 -S XRobot-XRDAP-<UID> -a 0 -D xrdap.elf.bin`. From then on the bootloader starts the application at every power-up once the application area passes its check, and the PC sees `1D50:6199` (XR-DAP-V307 CMSIS-DAP) with the serial `XRobot-XRDAP-` followed by the chip UID.
 
+The bootloader is updated together with the application: `--bootloader-dir` names the output directory of `tools/build.sh` (`build/images/<board>/`, which holds `bootloader-a.elf.bin` and `bootloader-b.elf.bin`).
+
+```
+python tools/dfu_update.py --bootloader-dir build/images/wdap build/images/wdap/xrdap.elf.bin
+```
+
+In DFU mode the bootloader has two interfaces: interface 0 (`XR-DAP application`) writes the application, interface 1 (`XR-DAP bootloader slot A` or `... slot B`) the other bootloader slot. `dfu_update.py` compares the version of that slot's image in the directory with the running version in the USB product string and writes the bootloader first when they differ: the bootloader closes the slot with its record, restarts in DFU mode, stage 1 starts the new bootloader, and the application follows. With the same version the bootloader is not written (`--force-bootloader` writes it anyway).
+
 `xrdap info` from [XRDAP-Host](https://github.com/Jiu-xiao/XRDAP-Host) confirms the probe: it lists the probe name, serial, firmware version, CMSIS-DAP packet size and the vendor extension's capabilities, then connects to the target and reads its DPIDR and core state.
 
 ### Status lights (wdap)
@@ -47,7 +67,7 @@ The 8 WS2812B on the `wdap` board show the debug state, with the colours of the 
 
 TIM1_CH3N (PB15) PWM with DMA drives the chain, with the high time of each bit set from the WS2812B-2020 datasheet timing; the CPU only fills a buffer every 20 ms.
 
-### CH32V305 board (v305, this firmware not yet verified on hardware)
+### CH32V305 board (v305)
 
 `v305` is the CH32V305 board of this repository's earlier application (tag `legacy-v305-app`) (CH32V305FBP6, 12 MHz crystal, the circuit of the WCH-LinkE). On it this firmware is a wired USB high-speed DAP only, without radio, with the product name `XR-DAP-V305` (USB product string `XR-DAP-V305 CMSIS-DAP`, USB ids of the family), and with the pins of the earlier application:
 
@@ -59,15 +79,11 @@ TIM1_CH3N (PB15) PWM with DMA drives the chain, with the high time of each bit s
 | LED | PC9 (bonded to PA8), lit when low |
 | Held low after start-up | PA5, PB12 (target power switches) |
 
-The board keeps the three-stage boot of the earlier application: stage 1 at address 0 jumps to the stage-3 DFU bootloader at `0x20000` (USB `1209:3070`); the application window is `0x2000`–`0x20000`, its last 256 bytes the seal. The sources of stage 1 and the bootloader are in `bootloader-ch32v3/` (with the libxr version they run with; `tools/build.sh v305` builds `stage1.bin` and `bootloader.bin` as well). On a blank chip or a broken bootloader, a WCH-Link writes `stage1.bin` at `0x08000000` and `bootloader.bin` at `0x08020000`, and the application then goes in over DFU; otherwise these two parts stay as they are. The application is updated over DFU only, not by writing the whole flash with a WCH-Link (that destroys stage 1 and the bootloader):
+The boot chain is the one of the CH32V307 boards (see "Boot chain"); the bootloader key is the IAP key (S1 on the WCH-LinkE schematic, on PC7 with an external 10K pull-up), and the LED on PC9 blinks while the bootloader is in DFU mode. The other key, ModeS (S2), sits on the crystal output PD1 through a 0 Ω resistor: pressing it stops the crystal and drops USB, and the firmware does not use it. The application window is the one of the earlier three-stage boot (`0x2000`–`0x20000`, settings and seal at its end), and the two bootloader slots lie above 128 KB (see "Flash layout"). The application and the bootloader are written and updated as on the other boards; a board that still has the three-stage boot migrates first as described under "First installation", and the sources of the three-stage boot stay in `bootloader-ch32v3/`.
 
-```
-python tools/dfu_update.py --bootloader 1209:3070 --run-app xrdap.elf.bin
-```
+While the board still runs the earlier application (`0d28:2041`), which the tool's DETACH does not look for, hold the IAP key at power-up so that the bootloader of the three-stage boot stays in DFU, and write the migration image. Once the application runs, PA13 and PA14 are no longer a debug port and a WCH-Link cannot reach the chip.
 
-`dfu_update.py` first sends DFU DETACH to the running application (which writes the mailbox at `0x20007FF0` at the top of RAM and resets); the bootloader stays in DFU and writes the image and the seal, and RUN_APP (vendor request `0x5A`) at the end starts the application. This bootloader does not start the application by itself: after power-up and every reset it stays in DFU and needs RUN_APP again: `python tools/dfu_update.py --bootloader 1209:3070 --run-app` (no image: only starts the application). `--upload FILE` saves the image found in the application window before writing. While the board still runs the earlier application (`0d28:2041`), which the tool's DETACH does not look for, hold the IAP key (PC7) at power-up so the bootloader stays in DFU, or use `dfu-util -d 0d28:2041,1209:3070 -a 0 -D xrdap.elf.bin` followed by `--run-app`. Once the application runs, PA13 and PA14 are no longer a debug port and a WCH-Link cannot reach the chip.
-
-The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (the earlier application runs at 144 MHz); `XRDAP_APP_SYSCLK_HZ` set to `144000000` in `boards/v305.cmake` returns to the rated clock. The SWD timing is calibrated on this board with a cycle sweep: up to 8 MHz requested the actual clock is within -8 %/+8 % of the request, and the undelayed path (about 17–19 MHz) is used only from requests of about 19 MHz.
+The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); at 216 MHz the chip can run too hot, and restarts and similar problems can occur. `v305-144` is the same board at the rated 144 MHz, everything else is as on `v305`. OpenOCD 0.12 reads 128 KiB of STM32F302 flash at SWD 30 MHz at about 1174 KiB/s at 216 MHz and about 795 KiB/s at 144 MHz. The SWD timing is calibrated on this board with a cycle sweep: up to 8 MHz requested the actual clock is within -8 %/+8 % of the request, and the undelayed path (about 17–19 MHz) is used only from requests of about 19 MHz.
 
 ## 2. Wireless debugging (wdap)
 
@@ -79,11 +95,11 @@ One transport owns a probe at a time (the session owner of [XRDAP-Core](https://
 
 ### Pairing
 
-Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send vendor command `0x9F 0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
+Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
 
 ### Settings
 
-Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout) and are read and changed with vendor command `0x9F` (see `app/radio_command.hpp`). `0x9F 0x30` hands a `0x9F` command over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x9F 0x10` answer status 4 (not paired).
+Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1; the operations are in `app/radio_command.hpp`), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired).
 
 - Role: automatic (the default), always wired, always host, always remote.
 - Modulation (both boards must match):
@@ -125,7 +141,7 @@ The SWD clock is made in software on GPIO: a setting at or above the speed of th
 
 ## 4. Building
 
-CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The bootloader and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap` or `v305` selects the board (`v305` keeps the bootloader of XRDAP-CH32V3 and has no bootloader project):
+CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144`, `v305` or `v305-144` selects the board:
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -136,9 +152,9 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-The images are `build/bootloader-evt/bootloader.elf.bin` and `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap v305` builds the bootloader and the application for the three boards (for v305 the stage 1 and the bootloader of `bootloader-ch32v3/`) and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
+The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
 
-The link protocol, the session rules, the pair identity, DAP forwarding, the settings log and the flash layout are pure logic without hardware and are tested on the build machine (CI runs them too):
+The link protocol, the session rules, the pair identity, DAP forwarding, the settings log, the flash layout and the bootloader slot rules are pure logic without hardware and are tested on the build machine (CI runs them too):
 
 ```
 cmake -S tests -B build/tests
@@ -146,7 +162,7 @@ cmake --build build/tests
 ctest --test-dir build/tests
 ```
 
-The firmware version is `project(... VERSION ...)` in `CMakeLists.txt`; the build adds the commit, e.g. `0.2.0+gc82e787` (`.dirty` at the end with uncommitted changes), and DAP_Info reports it to the host. A copy of the sources without `.git` gives the commit with `-DXRDAP_GIT_REV=<commit>`.
+The firmware version is `XRDAP_VERSION` in `cmake/version.cmake`; the build adds the commit, e.g. `0.2.0+gc82e787` (`.dirty` at the end with uncommitted changes). The application reports it in DAP_Info, the bootloader in its USB product string and its slot record. A copy of the sources without `.git` gives the commit with `-DXRDAP_GIT_REV=<commit>`.
 
 ## 5. Reference
 
@@ -169,26 +185,45 @@ Programming all 1 MiB over the wire: OpenOCD 0.12 erases in 6.8 s and programs a
 
 | Address | Content |
 |---|---|
-| `0x00000000`–`0x0000FFFF` | bootloader (64 KB, runs at 96 MHz) |
-| `0x00010000`–`0x0003F6FF` | application (144 MHz on `evt`, 216 MHz on `wdap`) |
+| `0x00000000`–`0x00000FFF` | stage 1 (`bootloader/stage1.S`, never updated) |
+| `0x00001000`–`0x0000DFFF` | bootloader slot A (52 KB, runs at 96 MHz; the last 256 bytes are the slot record) |
+| `0x0000E000`–`0x0001AFFF` | bootloader slot B (likewise) |
+| `0x0001B000`–`0x0003F6FF` | application (144 MHz on `evt` and `wdap-144`, 216 MHz on `wdap`) |
 | `0x0003F700`–`0x0003FEFF` | settings: role, modulation, pairing; kept across firmware updates |
 | `0x0003FF00`–`0x0003FFFF` | seal: application size and CRC32, written by the bootloader when a DFU download ends |
 
-The application window of `v305` is `0x00002000`–`0x0001FFFF` (the layout of the three-stage boot), its last 256 bytes the seal and the 2 KB in front of it the place of the settings, which the firmware does not write.
+The layout of `v305`:
 
-A DFU download in the bootloader can only write up to the settings: an image larger than `0x2F700` bytes fails to download and the settings stay. Both RAM splits (FLASH 192K + RAM 128K, FLASH 256K + RAM 64K) work; the firmware is linked for 64 KB of RAM, and the top 256 bytes of RAM hold the boot mailbox and the watchdog count (`common/reserved_ram.h`).
+| Address | Content |
+|---|---|
+| `0x00000000`–`0x00000FFF` | stage 1 |
+| `0x00002000`–`0x0001F6FF` | application (`v305` 216 MHz, `v305-144` 144 MHz) |
+| `0x0001F700`–`0x0001FEFF` | settings (the firmware does not write them) |
+| `0x0001FF00`–`0x0001FFFF` | seal |
+| `0x00020000`–`0x0002CFFF` | bootloader slot A |
+| `0x0002D000`–`0x00039FFF` | bootloader slot B |
 
-The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above** the CH32V307's rated 144 MHz: out-of-spec operation. It is done for the software SWD, whose speed follows the core clock: block reads run about 1.5 times as fast as at 144 MHz. The board files choose the clock (`XRDAP_APP_SYSCLK_HZ` in `boards/wdap.cmake`, implemented in `common/sysclk.c`); `144000000` returns to the rated clock. The bootloader runs at 96 MHz.
+The CH32V305FB data sheet gives 128 KB of flash; the flash goes on above it, and the earlier stage-3 bootloader ran at `0x20000` as well. The application sits in the zero-wait area of the first 128 KB, the bootloader slots above it.
+
+A DFU download in the bootloader can only write up to the settings: an application image larger than `0x24700` bytes (`0x1D700` on `v305`) fails to download and the settings stay. The settings and the seal sit at the addresses of the earlier single-bootloader layout, so a migrated board keeps its settings. The firmware is linked for 64 KB of RAM; the application window reaches beyond 192 KB, so with the user option FLASH 256K + RAM 64K the whole application runs from the zero-wait area, with FLASH 192K + RAM 128K the part beyond 192 KB runs slower; and the top 256 bytes of RAM hold the boot mailbox and the watchdog count (`common/reserved_ram.h`).
+
+The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above** the CH32V307's rated 144 MHz. It is done for the software SWD, whose speed follows the core clock. Measured wired on an STM32H723 target: OpenOCD 0.12 reads 1 MiB of flash at SWD 30 MHz at about 1000–1010 KiB/s at 216 MHz and about 680 KiB/s at 144 MHz; 1 KiB block reads sent one at a time, each after the previous answer, run at about 713 KiB/s at 216 MHz and 505–545 KiB/s at 144 MHz. Over the radio both run at about 84–88 KiB/s, bound by the air rate. At 216 MHz the chip can run too hot, and restarts and similar problems can occur. `wdap-144` is the same board at the rated 144 MHz, everything else is as on `wdap`. The board files choose the clock (`XRDAP_APP_SYSCLK_HZ` in `boards/wdap.cmake` and `boards/wdap-144.cmake`, implemented in `common/sysclk.c`). The bootloader runs at 96 MHz.
+
+### Boot chain
+
+At every reset stage 1 at address 0 (`bootloader/stage1.S`) reads the bootloader key, checks the slot records at the end of the two bootloader slots (`common/boot_slots.hpp`: magic, sequence number and its complement, size, CRC32 and its complement, slot address, version) and starts the valid slot with the larger sequence number; with the bootloader key held at power-up it starts the other valid slot, whose bootloader sees the key as well and stays in DFU mode, to go back to the previous bootloader. With no valid slot stage 1 stops, and only a WCH-Link or the chip's USB download mode (which `v305` lacks) can write `boot-chain.bin`.
+
+The same bootloader code is linked once for each slot. The running bootloader writes only the other slot: a download first erases that slot's record, and once the image is written and checked the record is written last, with a sequence number one more than its own; a download that stops or a power cut leaves that slot without a record, and stage 1 keeps starting the slot it started before. Images linked for the other slot's address and images larger than `0xCF00` bytes are refused; the CH32V307 boards and `v305` have different slot addresses, so each refuses the other's bootloader images. The application's control request `0x17` (BootInfo, `app/boot_info.hpp`) reports the running slot and the sequence numbers and versions of both slots.
 
 ### When the bootloader stays in DFU mode
 
 - the bootloader key is held at power-up;
-- the boot mailbox at the top of RAM (`0x2000FFF0`) holds a request, which survives a software reset;
-- the application area has no seal, the seal's CRC does not match, or the image is not linked for the application address (the second word of the vector table is not `0x00010000`).
+- the boot mailbox at the top of RAM (`0x2000FFF0`, `0x20007FF0` on `v305`) holds a request, which survives a software reset (the application asks through it on DFU DETACH, the bootloader after it wrote the other slot);
+- the application area has no seal, the seal's CRC does not match, or the image is not linked for the application address (the second word of the vector table is not `0x0001B000`, `0x00002000` on `v305`).
 
 ### Board files
 
-`boards/<name>.cmake` gives the crystal frequency, the application core clock, which parts the board has (`XRDAP_HAS_LED`, `XRDAP_HAS_RADIO`, `XRDAP_HAS_STATUS_LIGHTS`, `XRDAP_HAS_STATUS_LED`), whether it keeps another project's bootloader (`XRDAP_EXTERNAL_BOOTLOADER`, then also the application window and the boot mailbox magics) and the chip memory and buffer sizes (`XRDAP_RAM_SIZE`, `XRDAP_RTOS_HEAP_SIZE` and others; defaults and meaning in `cmake/ch32v3.cmake`), and `boards/<name>.hpp` the bootloader key, the LED, the status lights, the radio, the target pins, the SWD timing and the set-up before the pins are taken (`Board::Init()`). A new board needs only these two files.
+`boards/<name>.cmake` gives the crystal frequency, the bootloader key (`XRDAP_BOOT_KEY_PORT`, `XRDAP_BOOT_KEY_PIN`, read by stage 1 as well), the application core clock, which parts the board has (`XRDAP_HAS_LED`, `XRDAP_HAS_RADIO`, `XRDAP_HAS_STATUS_LIGHTS`, `XRDAP_HAS_STATUS_LED`), the flash layout and bootloader parameters of a chip that differs from the default CH32V307 (application window, bootloader slot addresses, first slot, heap and product string of the bootloader, boot mailbox magics; `boards/v305.cmake` is an example), whether it keeps another project's bootloader (`XRDAP_EXTERNAL_BOOTLOADER`) and the chip memory and buffer sizes (`XRDAP_RAM_SIZE`, `XRDAP_RTOS_HEAP_SIZE` and others; defaults and meaning in `cmake/ch32v3.cmake`), and `boards/<name>.hpp` the bootloader key, the LED, the status lights, the radio, the target pins, the SWD timing and the set-up before the pins are taken (`Board::Init()`). A new board needs only these two files.
 
 ### libxr version
 
@@ -196,4 +231,4 @@ The `libxr` submodule follows the `feat/xrdap-r2-swd-loop` branch, which carries
 
 ## License
 
-Apache-2.0. The WCH startup file, peripheral library and FreeRTOS under `platform/` keep their own licenses.
+Apache-2.0. The WCH startup file and peripheral library under `platform/` keep their own licenses.

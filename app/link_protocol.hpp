@@ -10,11 +10,13 @@
 //   [0] kind  [1] sequence  [2] fragment index  [3] fragment count
 //   [4..5] message size (total), little endian
 // Kinds:
-//   1 COMMAND  a DAP or 0x9F command, host -> remote
+//   1 COMMAND  a DAP command, host -> remote
 //   2 ANSWER   its answer, remote -> host, same sequence as the command
 //   3 PING     host -> remote; payload: session id, u16 little endian
 //   4 PONG     remote -> host; same sequence, payload: the session id it now holds
 //   5 HELLO    pairing (pairing.hpp; its own layout, no header)
+//   6 CONTROL  a control request (op + payload), host -> remote; answered by an ANSWER
+//              with the same sequence like a COMMAND, and passes the same gates
 // A message of `total` bytes (at most kMaxMessage) travels as count = max(1,
 // ceil(total / fragment)) fragments; fragment i carries bytes [i * fragment,
 // min(total, (i + 1) * fragment)). A receiver accepts a message only when every fragment
@@ -42,12 +44,13 @@ enum Kind : uint8_t
   kPing = 3,
   kPong = 4,
   kHello = 5,
+  kControl = 6,
 };
 
 /// 包头长度 / Header size.
 inline constexpr uint8_t kHeader = 6;
-/// 一条消息的最大长度（一条 DAP 命令或应答）/ Largest message (one DAP command or
-/// answer).
+/// 一条消息的最大长度（一条 DAP 命令、控制请求或应答）/ Largest message (one DAP command, control
+/// request or answer).
 inline constexpr uint16_t kMaxMessage = 1024;
 /// 最小分片（FLRC 127 字节包）下的最多分片数 / Most fragments, at the smallest fragment
 /// (127-byte FLRC packets).

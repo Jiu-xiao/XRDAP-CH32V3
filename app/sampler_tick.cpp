@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "sampler_task.hpp"
+#include "sampler_tick.hpp"
 
 #include "ch32v30x.h"
-#include "thread.hpp"
 
 namespace XrDap
 {
 namespace
 {
-constexpr uint32_t kTaskStackBytes = 3072;  // one frame on the stack plus SWD calls
 // TIM7 counts microseconds in a 16-bit counter.
 constexpr uint32_t kMaxCounterUs = 65535U;
 
@@ -81,15 +79,12 @@ class Tim7Tick final : public Vendor::TickTimer
 Tim7Tick* tick = nullptr;
 }  // namespace
 
-void StartSamplerTask(DapVendor& vendor, uint32_t priority)
+Vendor::TickTimer& SamplerTimer(DapVendor& vendor)
 {
   static Tim7Tick timer;
-  static LibXR::Thread thread;
   timer.vendor_ = &vendor;
   tick = &timer;
-  thread.Create<DapVendor*>(
-      &vendor, [](DapVendor* v) { v->RunSamplerTask(*tick); }, "dap_sampler",
-      kTaskStackBytes, static_cast<LibXR::Thread::Priority>(priority));
+  return timer;
 }
 }  // namespace XrDap
 

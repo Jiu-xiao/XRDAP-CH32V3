@@ -8,7 +8,6 @@
 #include "ch32_spi.hpp"
 #include "fast_gpio.hpp"
 #include "libxr.hpp"
-#include "semaphore.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
 
@@ -21,7 +20,7 @@ constexpr uint8_t kSetStandby = 0x80, kSetFs = 0xC1, kSetTx = 0x83, kSetRx = 0x8
 constexpr uint8_t kSetAutoFs = 0x9E;
 constexpr uint8_t kSetPacketType = 0x8A, kSetRfFrequency = 0x86, kSetBufferBase = 0x8F;
 constexpr uint8_t kSetModulation = 0x8B, kSetPacketParams = 0x8C, kSetTxParams = 0x8E;
-constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97;
+constexpr uint8_t kSetDioIrq = 0x8D, kClearIrq = 0x97, kGetIrqStatus = 0x15;
 constexpr uint8_t kGetRxBufferStatus = 0x17, kGetPacketStatus = 0x1D;
 constexpr uint8_t kWriteBuffer = 0x1A, kReadBuffer = 0x1B, kWriteRegister = 0x18;
 constexpr uint8_t kStandbyXosc = 0x01;
@@ -52,6 +51,9 @@ constexpr uint16_t kCrcSeedReg = 0x09C8;
 // while receiving.
 constexpr uint16_t kIrqTxDone = 0x0001, kIrqRxDone = 0x0002, kIrqCrcError = 0x0040;
 constexpr uint16_t kIrqMask = kIrqTxDone | kIrqRxDone | kIrqCrcError;
+// Latched in the IRQ status only, for the stuck-preamble check (see sx1281.hpp).
+constexpr uint16_t kIrqSyncValid = 0x0004, kIrqPreamble = 0x8000;
+constexpr uint16_t kIrqLatched = kIrqMask | kIrqSyncValid | kIrqPreamble;
 // Error byte of GetPacketStatus (table 11-68): LengthError, CrcError, AbortError.
 constexpr uint8_t kPacketErrors = 0x20 | 0x10 | 0x08;
 
@@ -61,24 +63,33 @@ constexpr uint8_t kTxBase = 0x00, kRxBase = 0x00;
 constexpr int8_t kPowerDbm = 0;  // the module's PA follows
 // PA ramp time code of SetTxParams (table 11-49): 8 us.
 constexpr uint8_t kRamp = 0x60;
-// SPI transfers up to this size go byte by byte through the data register instead of
-// DMA: shorter for the many small commands.
-constexpr uint16_t kSpiDmaMin = 24;
+// Every SPI transfer goes byte by byte through the data register (PolledTransfer). A
+// flag that does not come within this many polls (a few ms at 144 MHz; a byte takes
+// 0.44 us at 18 MHz) fails the transfer.
+constexpr uint32_t kSpiSpinLimit = 100'000;
 constexpr uint32_t kBusyTimeoutUs = 20'000;
 constexpr uint32_t kTxTimeoutUs = 5'000;  // the longest packet takes about 1.3 ms
 constexpr uint16_t kMaxTransfer = 3 + Sx1281::kMaxPayload;
+// CH32SPI only sets up the peripheral; no transfer goes through it (see PolledTransfer),
+// so its buffers are a token size and its DMA threshold is never reached.
+constexpr uint16_t kSpiTokenBuffer = 4;
+constexpr uint16_t kSpiDmaMin = kMaxTransfer;
 // Silence recovery: enter receive again after kRearmUs without a packet, reset the radio
 // after kRestartUs.
 constexpr uint32_t kRearmUs = 100'000;
 constexpr uint32_t kRestartUs = 2'000'000;
+// Stuck preamble: look every kStuckCheckUs, enter receive again after kStuckUs.
+constexpr uint32_t kStuckCheckUs = 1'000;
+constexpr uint32_t kStuckUs = 2'000;
 
-alignas(4) uint8_t dma_rx[kMaxTransfer];
-alignas(4) uint8_t dma_tx[kMaxTransfer];
+alignas(4) uint8_t dma_rx[kSpiTokenBuffer];
+alignas(4) uint8_t dma_tx[kSpiTokenBuffer];
 
 struct Hardware
 {
   // SPI1 on PA5/PA6/PA7 (APB2 = core clock), mode 0 (9.3): 144 MHz / 8 = 18 MHz, the
-  // SX1281's limit; at 216 MHz / 16 = 13.5 MHz.
+  // SX1281's limit; at 216 MHz / 16 = 13.5 MHz. CH32SPI sets up the pins, the clock and
+  // the mode; transfers go through PolledTransfer, not through CH32SPI.
   LibXR::CH32SPI spi{CH32_SPI1,
                      {dma_rx, sizeof(dma_rx)},
                      {dma_tx, sizeof(dma_tx)},
@@ -102,7 +113,6 @@ struct Hardware
                        LibXR::GPIO::Direction::INPUT};
   LibXR::CH32GPIO dio1{Board::kRadioDio1.Port(), Board::kRadioDio1.Mask(),
                        LibXR::GPIO::Direction::INPUT};
-  LibXR::Semaphore done;
 };
 
 Hardware* hw = nullptr;
@@ -117,27 +127,33 @@ FastNss fast_nss;
 FastBusy fast_busy;
 FastDio1 fast_dio1;
 
-// Short transfers bypass CH32SPI's buffers and DMA: one byte at a time through the data
+// Transfers bypass CH32SPI's buffers and DMA: one byte at a time through the data
 // register (RM SPI chapter, TXE/RXNE). Only one byte is in flight, so an interrupt in
 // the middle only stretches the transfer and cannot overrun the receive register. The
-// DMA channels stay disabled between CH32SPI transfers, so their requests do not
-// interfere.
-void PolledTransfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
+// whole transfer blocks either way, so DMA would save no time. A CH32SPI DMA transfer
+// that times out also leaves both channels armed, and the RX channel then takes the
+// bytes of the following transfers; a polled transfer that fails leaves nothing behind.
+bool PolledTransfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
 {
   SPI_TypeDef* spi = SPI1;
   (void)spi->DATAR;  // drop a stale byte
   for (uint16_t i = 0; i < size; ++i)
   {
+    uint32_t spins = 0;
     while ((spi->STATR & SPI_I2S_FLAG_TXE) == 0U)
     {
+      if (++spins >= kSpiSpinLimit) return false;
     }
     spi->DATAR = tx[i];
+    spins = 0;
     while ((spi->STATR & SPI_I2S_FLAG_RXNE) == 0U)
     {
+      if (++spins >= kSpiSpinLimit) return false;
     }
     const uint8_t byte = static_cast<uint8_t>(spi->DATAR);
     if (rx != nullptr) rx[i] = byte;
   }
+  return true;
 }
 
 template <typename Pin>
@@ -185,18 +201,8 @@ bool Sx1281::Transfer(const uint8_t* tx, uint8_t* rx, uint16_t size)
   if (size == 0U || size > kMaxTransfer ||
       !WaitLevel(fast_busy, false, kBusyTimeoutUs, waited))
     return false;
-  bool ok = true;
   fast_nss.Write(false);
-  if (size <= kSpiDmaMin)
-  {
-    PolledTransfer(tx, rx, size);
-  }
-  else
-  {
-    LibXR::SPI::OperationRW op(hw->done, 10);
-    ok = hw->spi.ReadAndWrite({rx, rx != nullptr ? size : 0U}, {tx, size}, op, false) ==
-         LibXR::ErrorCode::OK;
-  }
+  const bool ok = PolledTransfer(tx, rx, size);
   fast_nss.Write(true);
   return ok;
 }
@@ -240,12 +246,14 @@ void Sx1281::Receive()
   hw->txen.Write(false);
   hw->rxen.Write(true);
   Command({kSetRx, 0x00, 0xFF, 0xFF});  // continuous
+  preamble_seen_ = false;
   // Silence counts from here: right after a transmit the answer is still on its way.
   rearmed_us_ = NowUs();
 }
 
 bool Sx1281::Start()
 {
+  burst_count_ = 0;  // a burst in progress ends with the reset
   hw->nreset.Write(false);
   LibXR::Thread::Sleep(2);
   hw->nreset.Write(true);
@@ -269,8 +277,8 @@ bool Sx1281::Start()
                static_cast<uint8_t>(identity_.crc_seed >> 8),
                static_cast<uint8_t>(identity_.crc_seed)}) &&
       Command({kSetTxParams, static_cast<uint8_t>(kPowerDbm + 18), kRamp}) &&
-      Command({kSetDioIrq, kIrqMask >> 8, kIrqMask & 0xFF, kIrqMask >> 8, kIrqMask & 0xFF,
-               0, 0, 0, 0}) &&
+      Command({kSetDioIrq, kIrqLatched >> 8, kIrqLatched & 0xFF, kIrqMask >> 8,
+               kIrqMask & 0xFF, 0, 0, 0, 0}) &&
       Command({kSetAutoFs, 0x01});
   ClearIrq();
   Receive();
@@ -317,27 +325,55 @@ void Sx1281::PrepareTransmit()
 
 bool Sx1281::TransmitBurst(uint8_t count, Fill fill, void* ctx)
 {
+  StartBurst(count, fill, ctx);
+  while (ContinueBurst())
+  {
+  }
+  return burst_sent_;
+}
+
+void Sx1281::SendLoaded(uint8_t size)
+{
+  SetPacketParams(size);
+  Command({kSetTx, 0x00, 0x00, 0x00});
+  burst_sent_us_ = NowUs();
+}
+
+void Sx1281::StartBurst(uint8_t count, Fill fill, void* ctx)
+{
+  if (count == 0U) return;
   if (!prepared_) PrepareTransmit();
   prepared_ = false;
   hw->rxen.Write(false);
   hw->txen.Write(true);
+  burst_fill_ = fill;
+  burst_ctx_ = ctx;
+  burst_count_ = count;
+  burst_index_ = 0;
+  burst_sent_ = true;
+  SendLoaded(Load(fill, ctx, 0));
+}
 
-  uint8_t size = Load(fill, ctx, 0);
-  bool all_sent = true;
-  for (uint8_t i = 0; i < count; ++i)
+bool Sx1281::ContinueBurst()
+{
+  if (burst_count_ == 0U) return false;
+  // DIO1 carries TxDone while transmitting (see the file header).
+  if (!fast_dio1.Read())
   {
-    SetPacketParams(size);
-    Command({kSetTx, 0x00, 0x00, 0x00});
-    uint32_t waited = 0;
-    const bool sent = WaitLevel(fast_dio1, true, kTxTimeoutUs, waited);
-    ClearIrq();
-    all_sent = all_sent && sent;
-    if (i + 1U < count) size = Load(fill, ctx, static_cast<uint8_t>(i + 1U));
+    if (NowUs() - burst_sent_us_ < kTxTimeoutUs) return true;
+    burst_sent_ = false;
   }
+  ClearIrq();
+  if (++burst_index_ < burst_count_)
+  {
+    SendLoaded(Load(burst_fill_, burst_ctx_, burst_index_));
+    return true;
+  }
+  burst_count_ = 0;
   // Receive accepts any length up to the maximum (variable length filters longer ones).
   SetPacketParams(MaxPayload());
   Receive();
-  return all_sent;
+  return false;
 }
 
 void Sx1281::Recover()
@@ -347,12 +383,33 @@ void Sx1281::Recover()
   {
     Start();
   }
-  else if (now - rearmed_us_ >= kRearmUs)
+  else if (now - rearmed_us_ >= kRearmUs || PreambleStuck(now))
   {
     Command({kSetStandby, kStandbyXosc});
     ClearIrq();
     Receive();
   }
+}
+
+bool Sx1281::PreambleStuck(uint32_t now)
+{
+  if (now - checked_us_ < kStuckCheckUs) return false;
+  checked_us_ = now;
+  uint8_t status[4] = {kGetIrqStatus, 0, 0, 0};
+  Transfer(status, status, sizeof(status));
+  const uint16_t irq = static_cast<uint16_t>((status[2] << 8) | status[3]);
+  if ((irq & kIrqPreamble) == 0U || (irq & (kIrqSyncValid | kIrqRxDone)) != 0U)
+  {
+    preamble_seen_ = false;
+    return false;
+  }
+  if (!preamble_seen_)
+  {
+    preamble_seen_ = true;
+    preamble_us_ = now;
+    return false;
+  }
+  return now - preamble_us_ >= kStuckUs;
 }
 
 bool Sx1281::PacketBad()

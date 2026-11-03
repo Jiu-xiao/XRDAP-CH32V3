@@ -42,7 +42,7 @@ uint32_t NowUs() { return static_cast<uint32_t>(LibXR::Timebase::GetMicroseconds
 void Fail(const uint8_t* req, uint8_t* resp, uint16_t& out_len)
 {
   resp[0] = req[0];
-  resp[1] = Dap::kError;
+  resp[1] = Byte(DapStatus::ERROR);
   out_len = 2;
 }
 
@@ -68,9 +68,11 @@ bool ReachPeer()
 }
 
 bool Forward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_cap,
-             uint16_t& out_len)
+             uint16_t& out_len, bool control = false)
 {
-  const uint32_t hz = SwjClockHz(req, req_len);
+  // A control request is not a DAP command: no SWJ clock to note, no DAP_Disconnect to end
+  // the session, and the remote executes it without SWD time.
+  const uint32_t hz = control ? 0U : SwjClockHz(req, req_len);
   if (hz != 0U) swd_hz = hz;
   if (!ReachPeer())
   {
@@ -78,9 +80,9 @@ bool Forward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_
     Fail(req, resp, out_len);
     return false;
   }
-  const bool disconnect = IsCommand(req, req_len, Dap::kDisconnect);
+  const bool disconnect = !control && IsCommand(req, req_len, Byte(DapCmd::DISCONNECT));
   if (!LinkForward(req, req_len, resp, resp_cap, out_len,
-                   ExecutionUs(req, req_len, swd_hz), !disconnect))
+                   control ? 0U : ExecutionUs(req, req_len, swd_hz), !disconnect, control))
   {
     peer_lost = true;
     Fail(req, resp, out_len);
@@ -93,9 +95,10 @@ bool Forward(const uint8_t* req, uint16_t req_len, uint8_t* resp, uint16_t resp_
 }
 }  // namespace
 
-void DapSessionInit(LinkExecutor execute, LinkSessionEnd on_remote_session_end)
+void DapSessionInit(LinkExecutor execute, LinkExecutor control,
+                    LinkSessionEnd on_remote_session_end)
 {
-  LinkInit(execute, on_remote_session_end);
+  LinkInit(execute, control, on_remote_session_end);
 }
 
 void DapSessionApplyConfig()
@@ -170,8 +173,8 @@ bool DapSessionHandleUsbCommand(const uint8_t* req, uint16_t req_len, uint8_t* r
       break;
   }
   // DAP_Info is the same on both probes; tools ask it before they connect.
-  if (IsCommand(req, req_len, Dap::kInfo)) return false;
-  if (IsCommand(req, req_len, Dap::kConnect))
+  if (IsCommand(req, req_len, Byte(DapCmd::INFO))) return false;
+  if (IsCommand(req, req_len, Byte(DapCmd::CONNECT)))
   {
     // A new session: the previous one (if any) is over for the remote too.
     ResetSessions();
@@ -196,11 +199,11 @@ bool DapSessionHandleUsbCommand(const uint8_t* req, uint16_t req_len, uint8_t* r
   replay.Note(req, req_len);
   if (!session_wireless)
   {
-    if (IsCommand(req, req_len, Dap::kDisconnect)) session_local = false;
+    if (IsCommand(req, req_len, Byte(DapCmd::DISCONNECT))) session_local = false;
     return false;
   }
   (void)Forward(req, req_len, resp, resp_cap, out_len);
-  if (IsCommand(req, req_len, Dap::kDisconnect)) session_wireless = false;
+  if (IsCommand(req, req_len, Byte(DapCmd::DISCONNECT))) session_wireless = false;
   return true;
 }
 
@@ -208,7 +211,7 @@ bool DapSessionForward(const uint8_t* req, uint16_t req_len, uint8_t* resp,
                        uint16_t resp_cap, uint16_t& out_len)
 {
   if (!LinkRunning()) return false;
-  return Forward(req, req_len, resp, resp_cap, out_len);
+  return Forward(req, req_len, resp, resp_cap, out_len, true);
 }
 
 void DapSessionService()

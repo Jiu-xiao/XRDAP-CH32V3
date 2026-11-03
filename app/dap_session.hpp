@@ -52,11 +52,13 @@ enum class RadioRole : uint8_t
   REMOTE = 2,  ///< 执行无线收到的 DAP 命令 / execute DAP commands from the radio
 };
 
-/// @brief 设置远端的执行器和会话结束回调 / Set the remote's executor and session-end
+/// @brief 设置远端的执行器（DAP 命令、控制请求各一个）和会话结束回调 / Set the remote's
+///        executors (one for DAP commands, one for control requests) and session-end
 ///        callback.
 /// @note 启动时调用一次，在 DapSessionApplyConfig() 之前 / Call once at start-up, before
 ///       DapSessionApplyConfig().
-void DapSessionInit(LinkExecutor execute, LinkSessionEnd on_remote_session_end);
+void DapSessionInit(LinkExecutor execute, LinkExecutor control,
+                    LinkSessionEnd on_remote_session_end);
 
 /// @brief 按设置应用角色、调制方式和配对身份；未配对时关掉射频 / Apply the role setting,
 ///        modulation and pair identity from the settings; without a pairing the radio is
@@ -85,7 +87,7 @@ bool RadioSessionWireless();
 /// drives this one over the radio).
 bool RemoteSessionActive();
 
-/// @brief 处理一条来自 USB 的命令（0x9F 除外）/ Handle one command from USB (not 0x9F).
+/// @brief 处理一条来自 USB 的 DAP 命令 / Handle one DAP command from USB.
 /// @return 已经无线转发并填好应答时为 true；false 时由 DAP 类在本地执行 / true when it
 ///         was forwarded over the radio and the answer is filled in; false when the DAP
 ///         class executes it locally.
@@ -95,8 +97,8 @@ bool RemoteSessionActive();
 bool DapSessionHandleUsbCommand(const uint8_t* req, uint16_t req_len, uint8_t* resp,
                                 uint16_t resp_cap, uint16_t& out_len);
 
-/// @brief 把一条命令发给对端并等应答（0x9F 0x30）/ Send one command to the peer and wait
-///        for its answer (0x9F 0x30).
+/// @brief 把一个控制请求发给对端并等应答（控制操作 0x30）/ Send one control request to the
+///        peer and wait for its answer (control op 0x30).
 /// @return 对端未应答或未配对时为 false / false when the peer did not answer or the probe
 ///         is not paired.
 bool DapSessionForward(const uint8_t* req, uint16_t req_len, uint8_t* resp,
