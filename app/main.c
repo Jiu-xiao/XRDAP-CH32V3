@@ -10,7 +10,6 @@ int main(void)
   NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
   SystemInit();
   (void)XrDapSysClockInit();
-  SystemCoreClockUpdate();
 
   // LibXR's CH32 timebase reads SysTick as a free-running 64-bit HCLK counter (enabled,
   // HCLK, no auto-reload, counting up, no interrupt).

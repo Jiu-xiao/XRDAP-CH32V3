@@ -41,5 +41,10 @@ int XrDapSysClockInit(void)
   while ((RCC->CFGR0 & RCC_SWS) != RCC_SWS_PLL)
   {
   }
+  // SystemCoreClockUpdate() would read RCC back right after the switch, and that read can
+  // return a wrong PLL source and multiplier. The frequency is known here.
+  // SystemCoreClockUpdate() 会在切换后立刻读回 RCC，这时可能读到错误的 PLL 来源和倍频。
+  // 频率在这里是已知的。
+  SystemCoreClock = XRDAP_SYSCLK_HZ;
   return 1;
 }
