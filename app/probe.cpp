@@ -42,21 +42,9 @@ void RestartIntoBootloader(void*)
 
 }  // namespace
 
-Probe::DfuRuntime::DfuRuntime() : DfuRuntimeClass(RestartIntoBootloader) {}
-
-uint32_t Probe::DfuRuntime::BusResets(void* ctx)
+Probe::DfuRuntime::DfuRuntime()
+    : ResetCountingUsb<LibXR::USB::DfuRuntimeClass>(RestartIntoBootloader)
 {
-  return static_cast<DfuRuntime*>(ctx)->resets_;
-}
-
-void Probe::DfuRuntime::OnDeviceEvent(bool in_isr, LibXR::USB::DeviceEvent event,
-                                      uint8_t endpoint)
-{
-  if (event == LibXR::USB::DeviceEvent::RESET)
-  {
-    resets_ = resets_ + 1U;
-  }
-  DfuRuntimeClass::OnDeviceEvent(in_isr, event, endpoint);
 }
 
 Probe::BoardInit::BoardInit() { Board::Init(); }
@@ -80,7 +68,7 @@ Probe::Probe()
   FormatSerial(ChipUid(), kChipUidSize, serial);
   SetProbeInfo(dap_, {kProductName, Board::kName, serial, kFirmwareVersion});
   // USB 总线复位让连在 USB 上的连接作废。 / A USB bus reset lapses a connection on USB.
-  vendor_.SetUsbResetSource(&DfuRuntime::BusResets, &dfu_);
+  vendor_.SetUsbResetSource(&dfu_.BusResets());
   exec_.SetControl(&Probe::HandleControl, this);
   usb_.Init(false);
   usb_.Start(false);

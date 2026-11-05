@@ -11,10 +11,6 @@ namespace
 
 uint32_t NowMs() { return static_cast<uint32_t>(LibXR::Timebase::GetMilliseconds()); }
 
-// 脉冲的前一半熄灭：一阵 DAP 命令一个短暗点。 / Dark for the first half of the pulse:
-// one short gap per burst of DAP commands.
-constexpr uint32_t kPulseDarkAbove = 500;
-
 }  // namespace
 
 StatusLed::StatusLed(const Probe& probe)
@@ -30,7 +26,7 @@ bool StatusLed::Poll()
       probe_.UsbConfigured() ? Light::Link::WIRED : Light::Link::NONE;
   const Light::Frame frame =
       rule_.Update(link, Light::Setting::NONE, probe_.Activity().Read(now), now);
-  Write(link == Light::Link::WIRED && frame.pulse < kPulseDarkAbove);
+  Write(link == Light::Link::WIRED && Light::LitOnOff(frame));
   return false;
 }
 

@@ -39,6 +39,7 @@
 #include "xrdap/activity/dap_activity.hpp"
 #include "xrdap/control/usb_control.hpp"
 #include "xrdap/session/executor.hpp"
+#include "xrdap/vendor/reset_counting_usb.hpp"
 #include "xrdap/vendor/dap_vendor.hpp"
 
 namespace XrDap
@@ -88,16 +89,10 @@ class Probe
   // 线复位时停止。
   // The DFU runtime interface, also counting USB bus resets (libxr reports them to every
   // class): sampling started from USB stops when the bus resets.
-  class DfuRuntime : public LibXR::USB::DfuRuntimeClass
+  class DfuRuntime : public ResetCountingUsb<LibXR::USB::DfuRuntimeClass>
   {
    public:
     DfuRuntime();
-    static uint32_t BusResets(void* ctx);
-    void OnDeviceEvent(bool in_isr, LibXR::USB::DeviceEvent event,
-                       uint8_t endpoint) override;
-
-   private:
-    volatile uint32_t resets_ = 0;
   };
 
   // 构造顺序里的两步：板子初始化（引脚、电源开关），时间基之后的 LibXR 平台初始化。
