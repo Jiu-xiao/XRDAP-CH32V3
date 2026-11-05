@@ -95,13 +95,22 @@ That the probe is used over one link at a time (USB or the radio) is up to the u
 
 ### Pairing
 
-Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the default radio parameters (2.44 GHz, sync word `XRDP`) the boards exchange their chip UIDs and derive the parameters of the pair from the two UIDs: frequency (2403–2479 MHz), CRC seed and GFSK sync word. Other pairs match neither frequency nor CRC, so their packets are not received. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
+Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the control channel F (2448.5 MHz), with the default radio parameters (sync word `XRDP`), the boards exchange their chip UIDs and derive the CRC seed and GFSK sync word of the pair from the two UIDs. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
+
+During pairing all probes use the default parameters and hear each other, so only one pair is paired at a time.
+
+### Channels
+
+Pairing and setting up a session happen on F, the same for all probes. Once the host has found the remote it picks a data channel and both boards move there: at the first session it scans 2402–2481 MHz and takes the least busy point; when resends grow during a session it moves to the next good point, and the old point and the points less than 2 MHz from it are not used for 10 minutes. Control request `0x19` locks the data channel to one point, which then does not change. The rules are in XRDAP-Core `docs/protocol.md` 8.4.
+
+Several pairs of probes can work at the same time: they share F and tell their packets apart by the CRC seed (in GFSK also by the sync word). This is checked by host tests and by an isolation test between two probes; it has not been tested on several pairs of probes.
 
 ### Settings
 
-Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout; LibXR's `DatabaseRawSequential`) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1 and 8.3), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired). Firmware before 0.6 keeps the settings in another format, so two boards updated from it are paired again.
+Role, modulation, channel lock and pairing live in the settings area at the end of the application window (see Flash layout; LibXR's `DatabaseRawSequential`) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1 and 8.3), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired). Firmware before 0.6 keeps the settings in another format, so two boards updated from it are paired again.
 
 - Role: automatic (the default), always wired, always host, always remote.
+- Channel: automatic (the default), or locked to one point.
 - Modulation (both boards must match):
   - GFSK (the default): 2 Mb/s, packets of up to 255 bytes, at most 5 per 1024-byte message.
   - FLRC: 1.3 Mb/s, packets of up to 127 bytes, 9 per message, without FEC (coding rate 1).
@@ -189,7 +198,7 @@ Programming all 1 MiB over the wire: OpenOCD 0.12 erases in 6.8 s and programs a
 | `0x00001000`–`0x0000DFFF` | bootloader slot A (52 KB, runs at 96 MHz; the last 256 bytes are the slot record) |
 | `0x0000E000`–`0x0001AFFF` | bootloader slot B (likewise) |
 | `0x0001B000`–`0x0003F6FF` | application (144 MHz on `evt` and `wdap-144`, 216 MHz on `wdap`) |
-| `0x0003F700`–`0x0003FEFF` | settings: role, modulation, pairing; kept across firmware updates |
+| `0x0003F700`–`0x0003FEFF` | settings: role, modulation, channel lock, pairing; kept across firmware updates |
 | `0x0003FF00`–`0x0003FFFF` | seal: application size and CRC32, written by the bootloader when a DFU download ends |
 
 The layout of `v305`:
