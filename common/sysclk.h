@@ -32,12 +32,13 @@ extern "C" {
 #endif
 
 /**
- * @brief Switch the core clock from HSI to the PLL at XRDAP_SYSCLK_HZ / 把内核时钟从 HSI
- *        切到 XRDAP_SYSCLK_HZ 的 PLL.
+ * @brief Switch the core clock from HSI to the PLL at XRDAP_SYSCLK_HZ and set
+ *        SystemCoreClock / 把内核时钟从 HSI 切到 XRDAP_SYSCLK_HZ 的 PLL，并设置
+ *        SystemCoreClock.
  * @return 1 on success; 0 when the crystal did not start, the clock then stays on HSI /
  *         成功时为 1；晶振未起振时为 0，时钟保持 HSI。
- * @note Call once after SystemInit() and before SystemCoreClockUpdate(), with interrupts
- *       off / 在 SystemInit() 之后、SystemCoreClockUpdate() 之前调用一次，此时中断关闭。
+ * @note Call once after SystemInit(), with interrupts off / 在 SystemInit() 之后调用一次，
+ *       此时中断关闭。
  */
 int XrDapSysClockInit(void);
 

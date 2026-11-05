@@ -41,5 +41,11 @@ int XrDapSysClockInit(void)
   while ((RCC->CFGR0 & RCC_SWS) != RCC_SWS_PLL)
   {
   }
+  // 216 MHz 下，切换后紧接着的一小段指令可能出错：写内存丢失或写错，读 RCC 读错。
+  // 空转这一段，之后才读写。 / At 216 MHz the instructions right after the switch can go
+  // wrong: a store lost or wrong, a read of RCC wrong. Idle through them before any read
+  // or write.
+  __asm__ volatile(".option push\n.option norvc\n.rept 32\nnop\n.endr\n.option pop\n");
+  SystemCoreClock = XRDAP_SYSCLK_HZ;
   return 1;
 }
