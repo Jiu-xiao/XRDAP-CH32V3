@@ -28,11 +28,15 @@ inline constexpr uint16_t kUsbBcd = 0x0300;
 /// pull-up.
 inline constexpr BoardPin kBootKey{kPortC, 10};
 
-/// LED2..LED9：8 颗 WS2812B-2020 串成一链，DIN 接 PB15（TIM1_CH3N；wdap.cmake 设
-/// XRDAP_HAS_STATUS_LIGHTS）/ LED2..LED9: a chain of 8 WS2812B-2020, DIN on PB15
-/// (TIM1_CH3N; wdap.cmake sets XRDAP_HAS_STATUS_LIGHTS).
+/// LED2..LED9：8 颗 WS2812B-2020 串成一链，DIN 接 PB15，即 SPI2 的
+/// MOSI（app/ws2812.hpp）/ LED2..LED9: a chain of 8 WS2812B-2020, DIN on PB15, SPI2's
+/// MOSI (app/ws2812.hpp).
 inline constexpr uint8_t kStatusLightCount = 8;
 inline constexpr BoardPin kStatusLights{kPortB, 15};
+/// SPI2 的 SCK 和 MISO，SPI 驱动一并配置 / SPI2's SCK and MISO, configured by the SPI
+/// driver as well.
+inline constexpr BoardPin kStatusLightSck{kPortB, 13};
+inline constexpr BoardPin kStatusLightMiso{kPortB, 14};
 
 /// P2-3 TCK_O：SWD 时为 SWCLK / P2-3 TCK_O, SWCLK in SWD mode.
 inline constexpr BoardPin kSwclk{kPortB, 3};

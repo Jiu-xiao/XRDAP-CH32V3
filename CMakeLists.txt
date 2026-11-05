@@ -19,39 +19,20 @@ add_subdirectory(libxr)
 target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
-add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
-                         app/settings_log.cpp app/sampler_tick.cpp common/sysclk.c)
+# The common probe (app/probe.hpp) and the board's composition (boards/<board>.cpp) with
+# the parts it lists in XRDAP_BOARD_SOURCES.
+add_executable(xrdap.elf app/main.c app/probe.cpp app/boot_guard.cpp app/sampler_tick.cpp
+                         app/boot_slot_info.cpp common/sysclk.c
+                         boards/${XRDAP_BOARD_APP}.cpp ${XRDAP_BOARD_SOURCES})
 target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
                            XRDAP_DAP_PACKET_COUNT=${XRDAP_DAP_PACKET_COUNT}
-                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES})
-# XRDAP-Core: session owner and command executor, XR vendor extension, status light
-# rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
+                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES}
+                           XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
+# XRDAP-Core (app/xrdap_port.hpp is its port header) and the SX1281 Module, header only.
 include(xrdap-core/xrdap_core.cmake)
 target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
-target_include_directories(xrdap.elf PRIVATE app common ${XRDAP_CORE_INCLUDE_DIRS})
-target_compile_definitions(xrdap.elf PRIVATE XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
-if(XRDAP_HAS_RADIO)
-  # Role and modulation are settings in flash (app/config.hpp); one image serves both
-  # ends of the link.
-  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/link_protocol.cpp app/link_session.cpp
-                                   app/link_transport.cpp app/dap_forwarding.cpp
-                                   app/dap_session.cpp app/pair_identity.cpp
-                                   app/radio_command.cpp app/pairing.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO)
-endif()
-if(NOT XRDAP_EXTERNAL_BOOTLOADER)
-  # Stage 1 and the A/B bootloader slots (bootloader/): BootInfo reports them.
-  target_sources(xrdap.elf PRIVATE app/boot_info.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_AB_BOOT)
-endif()
-if(XRDAP_HAS_STATUS_LIGHTS)
-  target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LIGHTS)
-endif()
-if(XRDAP_HAS_STATUS_LED)
-  target_sources(xrdap.elf PRIVATE app/status_led.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LED)
-endif()
+target_include_directories(xrdap.elf PRIVATE app common modules/SX1281
+                                             ${XRDAP_CORE_INCLUDE_DIRS})
 target_link_libraries(xrdap.elf PRIVATE platform xr)
 # The image stops in front of the settings and the seal.
 math(EXPR XRDAP_APP_IMAGE_SIZE "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}"

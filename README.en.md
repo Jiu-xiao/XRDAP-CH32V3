@@ -32,7 +32,7 @@ A board without a debug header (such as a `wdap` with the header unpopulated) ca
 
 A board with the earlier single bootloader (at address 0, application at `0x00010000`) needs no debugger: write `migrate-to-ab.elf.bin` with `dfu_update.py`; the old bootloader starts it as an application, it writes the boot chain and restarts, and the new bootloader stays in DFU mode. This takes about 2 s; a power cut in that time leaves no working bootloader, and `boot-chain.bin` then has to be written in one of the two ways above. The settings (pairing and the rest) stay.
 
-A `v305` with the three-stage boot (`bootloader-ch32v3`, USB `1209:3070`) migrates over DFU the same way, with the `migrate-to-ab.elf.bin` of `v305`:
+A `v305` with the three-stage boot (USB `1209:3070`) migrates over DFU the same way, with the `migrate-to-ab.elf.bin` of `v305`:
 
 ```
 python tools/dfu_update.py --bootloader 1209:3070 --run-app migrate-to-ab.elf.bin
@@ -65,7 +65,7 @@ In DFU mode the bootloader has two interfaces: interface 0 (`XR-DAP application`
 
 The 8 WS2812B on the `wdap` board show the debug state, with the colours of the status light rule shared by the XR-DAP family ([XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)). A rainbow sweeps once at power-up. The chain is red while USB is connected to a computer, blue during a debug session over the radio (on the host, and on the remote while its remote session is open), otherwise purple; pairing blinks purple fast. While a tool reports connected through DAP_HostStatus the main colour fades to purple and back every 2 s, and while the target runs red and blue alternate every second; DAP_Disconnect, or 5 s without any command, returns to the main colour. Every DAP command lights the chain up and moves a white dot one LED on, about 15 times a second under steady traffic.
 
-TIM1_CH3N (PB15) PWM with DMA drives the chain, with the high time of each bit set from the WS2812B-2020 datasheet timing; the CPU only fills a buffer every 20 ms.
+The chain's data line PB15 is SPI2's MOSI: each data bit becomes a run of SPI bits after the WS2812B-2020 datasheet timing (SPI clock at most 18 MHz), a frame goes out by DMA, and the CPU encodes a frame every 20 ms.
 
 ### CH32V305 board (v305)
 
@@ -79,7 +79,7 @@ TIM1_CH3N (PB15) PWM with DMA drives the chain, with the high time of each bit s
 | LED | PC9 (bonded to PA8), lit when low |
 | Held low after start-up | PA5, PB12 (target power switches) |
 
-The boot chain is the one of the CH32V307 boards (see "Boot chain"); the bootloader key is the IAP key (S1 on the WCH-LinkE schematic, on PC7 with an external 10K pull-up), and the LED on PC9 blinks while the bootloader is in DFU mode. The other key, ModeS (S2), sits on the crystal output PD1 through a 0 Ω resistor: pressing it stops the crystal and drops USB, and the firmware does not use it. The application window is the one of the earlier three-stage boot (`0x2000`–`0x20000`, settings and seal at its end), and the two bootloader slots lie above 128 KB (see "Flash layout"). The application and the bootloader are written and updated as on the other boards; a board that still has the three-stage boot migrates first as described under "First installation", and the sources of the three-stage boot stay in `bootloader-ch32v3/`.
+The boot chain is the one of the CH32V307 boards (see "Boot chain"); the bootloader key is the IAP key (S1 on the WCH-LinkE schematic, on PC7 with an external 10K pull-up), and the LED on PC9 blinks while the bootloader is in DFU mode. The other key, ModeS (S2), sits on the crystal output PD1 through a 0 Ω resistor: pressing it stops the crystal and drops USB, and the firmware does not use it. The application window is the one of the earlier three-stage boot (`0x2000`–`0x20000`, settings and seal at its end), and the two bootloader slots lie above 128 KB (see "Flash layout"). The application and the bootloader are written and updated as on the other boards; a board that still has the three-stage boot migrates first as described under "First installation".
 
 While the board still runs the earlier application (`0d28:2041`), which the tool's DETACH does not look for, hold the IAP key at power-up so that the bootloader of the three-stage boot stays in DFU, and write the migration image. Once the application runs, PA13 and PA14 are no longer a debug port and a WCH-Link cannot reach the chip.
 
@@ -91,7 +91,7 @@ The SX1281 radio module on the `wdap` board joins two probes into one wireless p
 
 Both boards run the same firmware, and by default the role is decided automatically. A paired probe without a debug session of its own listens to the radio as a remote; when a tool sends DAP_Connect, the probe first pings its paired peer, and if the peer answers the session runs over the radio, otherwise the probe drives its own SWD port. So the board that is only powered is the remote and the board a tool opens is the host; without the remote, the host is an ordinary wired probe. When the peer drops out during a session the commands return errors rather than moving to the local SWD port; the next DAP_Connect decides again. SWJ_Clock, TransferConfigure and SWD_Configure sent before DAP_Connect are sent on to the remote when the session moves to the radio.
 
-One transport owns a probe at a time (the session owner of [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)): while the remote serves a radio session, the radio peer owns it, and commands on the remote's own USB get busy (standard commands `command FF`, vendor commands `command 05`) while DAP_Info is answered as usual; the other way round, a remote held by its local USB answers busy to the radio. When the radio session ends, the sampling it started stops.
+That the probe is used over one link at a time (USB or the radio) is up to the user; the probe does not arbitrate ([XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core) `docs/protocol.md`). When the radio session ends, the sampling it started stops.
 
 ### Pairing
 
@@ -99,7 +99,7 @@ Two boards work together once paired. Hold KEY2 on both boards for 3 s, one afte
 
 ### Settings
 
-Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1; the operations are in `app/radio_command.hpp`), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired).
+Role, modulation and pairing live in the settings area at the end of the application window (see Flash layout; LibXR's `DatabaseRawSequential`) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1 and 8.3), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired). Firmware before 0.6 keeps the settings in another format, so two boards updated from it are paired again.
 
 - Role: automatic (the default), always wired, always host, always remote.
 - Modulation (both boards must match):
@@ -108,13 +108,13 @@ Role, modulation and pairing live in the settings area at the end of the applica
 
 ### Link
 
-The packet format and the session rules are written down in `app/link_protocol.hpp` and `app/link_session.hpp`, and `tests/` checks the code against them. When no answer arrives in time the host sends the command again with the same sequence number, waiting twice as long each time; the remote answers a repeated sequence number of the same session with its last answer instead of executing the command again. After 1 s without a message from the peer, the next command pings first and returns an error at once when the ping fails, instead of retrying for a full second.
+The packet format, the session rules and the radio sessions are implemented in XRDAP-Core's `xrdap/radio/` (`docs/protocol.md` section 8), whose host tests check the code against the rules. When no answer arrives in time the host sends the command again with the same sequence number, waiting twice as long each time; the remote answers a repeated sequence number of the same session with its last answer instead of executing the command again. After 1 s without a message from the peer, the next command pings first and returns an error at once when the ping fails, instead of retrying for a full second.
 
 Every session over the radio has a 16-bit session id, a new one for every session the host opens, carried in the pings. During a session the host sends a heartbeat ping after 1 s without a command; on DAP_Disconnect, or after 5 s without a command from the PC, it ends the session with a ping carrying id 0. The remote ends the session on id 0, on a new id, or after 3 s without any packet from the host: it drops the cached answer and a half-assembled command and stops the sampling the session started. Commands outside a session are not executed.
 
 Continuous receive on the SX1281 can lock up under heavy traffic (datasheet errata 16.1); a radio that hears no packet for 100 ms enters receive again and is reset after 2 s. Received packets are judged by the error byte of GetPacketStatus (errata 16.3), and the radio stays in FS after each transmit or receive (SetAutoFs) for shorter mode switches. FLRC uses the 32-bit sync word `XRDP`, also after pairing: without a sync word the receiver takes noise for packets and the link stops; errata 16.4 does not publish the sync words to avoid at coding rate 1, and at coding rate 3/4 `XRDP` is outside the forbidden range.
 
-A small command takes about 0.6 ms there and back, of which the two transmissions take about 0.3 ms. To shorten it, SPI transfers of up to 24 bytes go straight through the registers instead of DMA; in continuous receive only the packet interrupts reach DIO1, so a high DIO1 means a packet and the interrupt status is not read; the radio leaves receive ahead of the next transmit while the remote executes a command and after the host has its answer; the PA ramps up in 8 µs.
+The radio driver is the xrobot-org/SX1281 Module, which has no thread of its own and is advanced by the main loop. To shorten the round trip, SPI transfers to the SX1281 are polled instead of using DMA; only TX done, RX done and CRC error reach DIO1, which is read by level; the radio leaves receive ahead of the next transmit while the remote executes a command and after the host has its answer; the PA ramps up in 8 µs.
 
 Typical results with the boards about 1 m apart, the host debugging a Cortex-M target with 1 MiB of flash over the radio, at an SWD clock of 30 MHz (10 MHz for OpenOCD):
 
@@ -154,7 +154,7 @@ cmake --build build/app-evt
 
 The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images.
 
-The link protocol, the session rules, the pair identity, DAP forwarding, the settings log, the flash layout and the bootloader slot rules are pure logic without hardware and are tested on the build machine (CI runs them too):
+The flash layout and the bootloader slot rules are pure logic without hardware and are tested on the build machine (CI runs them too; the radio link's logic is tested in XRDAP-Core):
 
 ```
 cmake -S tests -B build/tests
@@ -223,11 +223,11 @@ The same bootloader code is linked once for each slot. The running bootloader wr
 
 ### Board files
 
-`boards/<name>.cmake` gives the crystal frequency, the bootloader key (`XRDAP_BOOT_KEY_PORT`, `XRDAP_BOOT_KEY_PIN`, read by stage 1 as well), the application core clock, which parts the board has (`XRDAP_HAS_LED`, `XRDAP_HAS_RADIO`, `XRDAP_HAS_STATUS_LIGHTS`, `XRDAP_HAS_STATUS_LED`), the flash layout and bootloader parameters of a chip that differs from the default CH32V307 (application window, bootloader slot addresses, first slot, heap and product string of the bootloader, boot mailbox magics; `boards/v305.cmake` is an example), whether it keeps another project's bootloader (`XRDAP_EXTERNAL_BOOTLOADER`) and the chip memory and buffer sizes (`XRDAP_RAM_SIZE`, `XRDAP_RTOS_HEAP_SIZE` and others; defaults and meaning in `cmake/ch32v3.cmake`), and `boards/<name>.hpp` the bootloader key, the LED, the status lights, the radio, the target pins, the SWD timing and the set-up before the pins are taken (`Board::Init()`). A new board needs only these two files.
+`boards/<name>.cmake` gives the crystal frequency, the bootloader key (`XRDAP_BOOT_KEY_PORT`, `XRDAP_BOOT_KEY_PIN`, read by stage 1 as well), the application core clock, the bootloader's LED (`XRDAP_HAS_LED`), the application's composition (`XRDAP_BOARD_APP`, that is `boards/<name>.cpp`) and the sources of the parts it uses (`XRDAP_BOARD_SOURCES`), the flash layout and bootloader parameters of a chip that differs from the default CH32V307 (application window, bootloader slot addresses, first slot, heap and product string of the bootloader, boot mailbox magics; `boards/v305.cmake` is an example) and the chip memory and buffer sizes (`XRDAP_RAM_SIZE`, `XRDAP_C_HEAP_SIZE` and others; defaults and meaning in `cmake/ch32v3.cmake`), and `boards/<name>.hpp` the bootloader key, the LED, the status lights, the radio, the target pins, the SWD timing and the set-up before the pins are taken (`Board::Init()`), and `boards/<name>.cpp` constructs the common probe (`app/probe.hpp`) and the parts the board has on top (radio, status lights, ...; `app/part.hpp`) and runs the main loop. A new board needs these three files.
 
 ### libxr version
 
-The `libxr` submodule follows the `feat/xrdap-r2-swd-loop` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data.
+The `libxr` submodule follows the `release/0.6-candidate` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data.
 
 ## License
 

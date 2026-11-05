@@ -5,7 +5,7 @@
 [submodule "xrdap-core"]
 	path = xrdap-core
 	url = https://github.com/Jiu-xiao/XRDAP-Core.git
-	branch = refactor/0.6
-[submodule "bootloader-ch32v3/libxr"]
-	path = bootloader-ch32v3/libxr
-	url = https://github.com/Jiu-xiao/libxr.git
+	branch = main
+[submodule "modules/SX1281"]
+	path = modules/SX1281
+	url = https://github.com/xrobot-org/SX1281.git

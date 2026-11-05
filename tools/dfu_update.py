@@ -20,7 +20,7 @@ application follows:
 
   python tools/dfu_update.py --bootloader-dir build/bootloader-wdap build/app-wdap/xrdap.elf.bin
 
-A v305 board with the earlier three-stage bootloader (bootloader-ch32v3, 1209:3070), which
+A v305 board with the earlier three-stage bootloader (1209:3070), which
 does not start the application by itself, migrates to the A/B boot chain with
 migrate-to-ab; --run-app sends its RUN_APP request (vendor request 0x5A) after the
 download, and --upload reads the image in the application window back first:
@@ -45,7 +45,7 @@ BOOTLOADER_ID = (0x1209, 0x3072)
 
 DFU_CLASS, DFU_SUBCLASS = 0xFE, 0x01
 DFU_DETACH, DFU_DNLOAD, DFU_UPLOAD, DFU_GETSTATUS, DFU_CLRSTATUS, DFU_ABORT = 0, 1, 2, 3, 4, 6
-RUN_APP = 0x5A  # bootloader-ch32v3: start the application (vendor, interface)
+RUN_APP = 0x5A  # the earlier three-stage bootloader: start the application (vendor, interface)
 STATE_IDLE, STATE_DNLOAD_IDLE, STATE_MANIFEST_WAIT_RESET, STATE_ERROR = 2, 5, 8, 10
 APP_INTERFACE = "XR-DAP application"
 SLOT_INTERFACE = "XR-DAP bootloader slot "
@@ -303,10 +303,10 @@ def main():
     ap.add_argument("--serial", help="probe serial or its tail")
     ap.add_argument("--detach-only", action="store_true", help="only restart into the bootloader")
     ap.add_argument("--bootloader", default="1209:3072",
-                    help="VID:PID of the bootloader (1209:3070: bootloader-ch32v3, before the migration)")
+                    help="VID:PID of the bootloader (1209:3070: the earlier three-stage bootloader, before the migration)")
     ap.add_argument("--upload", metavar="FILE", help="read the current image back first")
     ap.add_argument("--run-app", action="store_true",
-                    help="send RUN_APP after the download (bootloader-ch32v3)")
+                    help="send RUN_APP after the download (the earlier three-stage bootloader)")
     ap.add_argument("--bootloader-dir", metavar="DIR",
                     help="also update the bootloader from DIR/bootloader-a|b.elf.bin (A/B boot chain)")
     ap.add_argument("--force-bootloader", action="store_true",
