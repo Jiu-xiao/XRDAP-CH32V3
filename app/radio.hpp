@@ -25,10 +25,20 @@
 namespace XrDap
 {
 
+/// SX1281 模块作为 RadioLink 要的收发器（xrdap/radio/transceiver.hpp）/ The SX1281 module
+/// as the transceiver RadioLink asks for (xrdap/radio/transceiver.hpp).
+class RadioDriver : public SX1281
+{
+ public:
+  using SX1281::SX1281;
+
+  LibXR::ErrorCode Start(const Radio::LinkParams& params);
+};
+
 class RadioPart final : public Part
 {
  public:
-  using Link = Radio::RadioLink<SX1281, Probe>;
+  using Link = Radio::RadioLink<RadioDriver, Probe>;
 
   explicit RadioPart(Probe& probe);
 
@@ -58,7 +68,7 @@ class RadioPart final : public Part
   LibXR::CH32GPIO dio1_;
   LibXR::CH32GPIO txen_;
   LibXR::CH32GPIO rxen_;
-  SX1281 radio_;
+  RadioDriver radio_;
   SettingsStore store_;
   Link link_;
 

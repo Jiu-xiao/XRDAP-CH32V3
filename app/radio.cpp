@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "radio.hpp"
 
+#include <cstring>
+
 #include "chip_uid.hpp"
 #include "timebase.hpp"
 
@@ -12,16 +14,27 @@ namespace
 
 constexpr uint32_t kPairHoldMs = 3'000;
 
-// 板级射频配置：模块的 PA 跟在芯片后面，芯片输出 0 dBm。 / Board configuration of the
-// radio: the module's PA follows the chip, which sends at 0 dBm.
-SX1281::Config BaseConfig()
-{
-  SX1281::Config config;
-  config.tx_power_dbm = 0;
-  return config;
-}
+// FLRC 的同步字固定：勘误 16.4 对编码率 1 没有公布要避开的值，不能用算出来的地址。
+// The FLRC sync word is fixed: errata 16.4 publishes no values to avoid at coding rate 1,
+// so a computed address cannot be used.
+constexpr uint8_t kFlrcSyncWord[4] = {'X', 'R', 'D', 'P'};
 
 }  // namespace
+
+LibXR::ErrorCode RadioDriver::Start(const Radio::LinkParams& params)
+{
+  const bool high = params.rate == Radio::Rate::kHigh;
+  Config config;
+  config.modulation = high ? Modulation::GFSK : Modulation::FLRC;
+  config.frequency_hz = params.frequency_hz;
+  // 模块的 PA 跟在芯片后面，芯片输出 0 dBm。 / The module's PA follows the chip, which
+  // sends at 0 dBm.
+  config.tx_power_dbm = 0;
+  config.crc_seed = params.crc_seed;
+  std::memcpy(config.sync_word, high ? params.address : kFlrcSyncWord,
+              sizeof(config.sync_word));
+  return SX1281::Start(config);
+}
 
 RadioPart::RadioPart(Probe& probe)
     : spi_(CH32_SPI1, {spi_rx_, sizeof(spi_rx_)}, {spi_tx_, sizeof(spi_tx_)},
@@ -38,7 +51,7 @@ RadioPart::RadioPart(Probe& probe)
       rxen_(Board::kRadioRxEn.Port(), Board::kRadioRxEn.Mask()),
       radio_(spi_, nss_, busy_, nreset_, dio1_, txen_, rxen_),
       store_(probe.SafeMode()),
-      link_(radio_, probe, store_, ChipUid(), BaseConfig()),
+      link_(radio_, probe, store_, ChipUid()),
       key_(Board::kBootKey.Port(), Board::kBootKey.Mask(), LibXR::GPIO::Direction::INPUT,
            LibXR::GPIO::Pull::UP)
 {
