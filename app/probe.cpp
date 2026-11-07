@@ -4,6 +4,7 @@
 #include "libxr.hpp"
 #include "probe_info.hpp"
 #include "reserved_ram.h"
+#include "target_reset.hpp"
 #include "xrdap/control/control.hpp"
 
 namespace XrDap
@@ -53,7 +54,7 @@ Probe::PlatformInit::PlatformInit() { LibXR::PlatformInit(); }
 
 Probe::Probe()
     : swd_(swclk_, swdio_, XRDAP_APP_SYSCLK_HZ, kSwdTiming),
-      nreset_(Board::kNreset.Port(), Board::kNreset.Mask()),
+      nreset_(TargetResetOutput(Board::kNreset)),
       dap_(LibXR::USB::Endpoint::EPNumber::EP1, LibXR::USB::Endpoint::EPNumber::EP1, swd_,
            &nreset_),
       vendor_(swd_),
@@ -64,7 +65,6 @@ Probe::Probe()
            Family::kUsbPid, kUsbBcd, {&kStrings}, {{&dap_, &dfu_}},
            {ChipUid(), kChipUidSize})
 {
-  nreset_.Write(true);
   FormatSerial(ChipUid(), kChipUidSize, serial);
   SetProbeInfo(dap_, {kProductName, Board::kName, serial, kFirmwareVersion});
   // USB 总线复位让连在 USB 上的连接作废。 / A USB bus reset lapses a connection on USB.
