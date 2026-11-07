@@ -3,6 +3,7 @@
 #include "sysclk.h"
 
 void bootloader_main(void);
+void __libc_init_array(void);
 
 int main(void)
 {
@@ -18,6 +19,8 @@ int main(void)
   SysTick->CTLR = (1U << 0) | (1U << 2);
   __enable_irq();
 
+  // C++ constructors of namespace-scope objects run once the clocks are set.
+  __libc_init_array();
   bootloader_main();
   for (;;)
   {
