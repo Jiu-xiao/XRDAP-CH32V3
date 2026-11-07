@@ -13,7 +13,10 @@ jobs:
       - name: clang-format 21.1.8 (libxr configuration), without the WCH SDK in platform/
         run: |
           pip install clang-format==21.1.8
-          git ls-files '*.hpp' '*.cpp' '*.h' '*.c' ':!:platform/*' | xargs clang-format --dry-run --Werror
+          git ls-files '*.hpp' '*.cpp' '*.h' '*.c' \
+            ':!:platform/Core/*' ':!:platform/Peripheral/*' \
+            ':!:platform/ch32v20x/Core/*' ':!:platform/ch32v20x/Peripheral/*' \
+            | xargs clang-format --dry-run --Werror
 
   build:
     runs-on: ubuntu-latest

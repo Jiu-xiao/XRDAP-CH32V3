@@ -4,8 +4,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-extern char _heap_start; // Heap region start from linker script.
-extern char _heap_end;   // Heap region end from linker script.
+extern char _heap_start;  // Heap region start from linker script.
+extern char _heap_end;    // Heap region end from linker script.
 
 caddr_t _sbrk(int incr)
 {
