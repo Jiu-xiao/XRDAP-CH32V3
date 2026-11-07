@@ -193,7 +193,7 @@ cmake --build build/app-evt
 
 The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images. On a `v*` tag it also creates a draft release with one archive per board and `SHA256SUMS`.
 
-The flash layout, the bootloader slot rules, the target reset pin and the sampling tick are tested on the build machine, the last two against the stand-ins for the WCH headers in `tests/fake` (CI runs them too; the radio link's logic is tested in XRDAP-Core):
+The flash layout, the bootloader slot rules, the target reset pin, the sampling tick and the driver of the `linkw` radio are tested on the build machine, the last three against the stand-ins for the WCH headers in `tests/fake` (CI runs them too; the radio link's logic is tested in XRDAP-Core):
 
 ```
 cmake -S tests -B build/tests

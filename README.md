@@ -193,7 +193,7 @@ cmake --build build/app-evt
 
 启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。打 `v*` 标签时还建一个 release 草稿，带每块板一个压缩包和 `SHA256SUMS`。
 
-Flash 布局、引导槽规则、目标复位脚和采样节拍在编译机上测试，后两项用 `tests/fake` 里的替身代替 WCH 头文件（CI 也运行；无线链路的逻辑在 XRDAP-Core 里测试）：
+Flash 布局、引导槽规则、目标复位脚、采样节拍和 `linkw` 的射频驱动在编译机上测试，后三项用 `tests/fake` 里的替身代替 WCH 头文件（CI 也运行；无线链路的逻辑在 XRDAP-Core 里测试）：
 
 ```
 cmake -S tests -B build/tests
