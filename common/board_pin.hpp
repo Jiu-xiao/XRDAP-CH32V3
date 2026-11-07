@@ -10,7 +10,7 @@
 
 #include <cstdint>
 
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
 namespace XrDap
 {

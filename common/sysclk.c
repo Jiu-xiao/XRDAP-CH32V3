@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "sysclk.h"
 
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
-#if (XRDAP_SYSCLK_HZ % HSE_VALUE) != 0
-#error "XRDAP_SYSCLK_HZ must be a multiple of the crystal frequency"
+#if (XRDAP_SYSCLK_HZ % XRDAP_PLL_INPUT_HZ) != 0
+#error "XRDAP_SYSCLK_HZ must be a multiple of the PLL input"
 #endif
 
-// PLL multipliers of the CH32V30x D8C (RM, RCC_CFGR0 PLLMUL with EXTEN).
-#if XRDAP_SYSCLK_HZ / HSE_VALUE == 8
-#define XRDAP_PLL_MUL RCC_PLLMULL8_EXTEN
-#elif XRDAP_SYSCLK_HZ / HSE_VALUE == 12
-#define XRDAP_PLL_MUL RCC_PLLMULL12_EXTEN
-#elif XRDAP_SYSCLK_HZ / HSE_VALUE == 18
-#define XRDAP_PLL_MUL RCC_PLLMULL18_EXTEN
+#if XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 8
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(8)
+#elif XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 12
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(12)
+#elif XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 18
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(18)
 #else
 #error "no PLL multiplier for this crystal and core clock"
 #endif
@@ -41,5 +40,11 @@ int XrDapSysClockInit(void)
   while ((RCC->CFGR0 & RCC_SWS) != RCC_SWS_PLL)
   {
   }
+  // 216 MHz 下，切换后紧接着的一小段指令可能出错：写内存丢失或写错，读 RCC 读错。
+  // 空转这一段，之后才读写。 / At 216 MHz the instructions right after the switch can go
+  // wrong: a store lost or wrong, a read of RCC wrong. Idle through them before any read
+  // or write.
+  __asm__ volatile(".option push\n.option norvc\n.rept 32\nnop\n.endr\n.option pop\n");
+  SystemCoreClock = XRDAP_SYSCLK_HZ;
   return 1;
 }

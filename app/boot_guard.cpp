@@ -3,39 +3,35 @@
 
 #include <cstdint>
 
-#include "ch32v30x.h"
-#include "ch32v30x_iwdg.h"
 #include "reserved_ram.h"
 #include "timebase.hpp"
+#include "xrdap_chip.h"
 
 namespace XrDap
 {
+
 namespace
 {
-// Kept in the reserved top of RAM (common/reserved_ram.h), which survives a watchdog
-// reset.
+
 struct GuardState
 {
   uint32_t magic;
   uint32_t watchdog_resets;
 };
-constexpr uintptr_t kGuardAddr = XRDAP_BOOT_GUARD_ADDR;
-constexpr uint32_t kGuardMagic = 0x44524758u;  // "XGRD"
+constexpr uint32_t kGuardMagic = 0x44524758U;  // "XGRD"
 constexpr uint32_t kSafeModeResets = 3;
 constexpr uint32_t kClearAfterMs = 30'000;
-// LSI 40 kHz / 256 = 156.25 Hz; 1250 counts = 8 s (RM 7.2, 12-bit reload).
-constexpr uint16_t kReload = 1250;
+constexpr uint32_t kTimeoutMs = 8'000;
+constexpr uint32_t kFeedMs = 10;
 
 volatile GuardState& State()
 {
-  return *reinterpret_cast<volatile GuardState*>(kGuardAddr);
+  return *reinterpret_cast<volatile GuardState*>(XRDAP_BOOT_GUARD_ADDR);
 }
 
-bool safe_mode = false;
-bool cleared = false;
 }  // namespace
 
-void BootGuardStart()
+BootGuard::BootGuard() : watchdog_(kTimeoutMs, kFeedMs, XRDAP_LSI_HZ)
 {
   const uint32_t flags = RCC->RSTSCKR;
   RCC->RSTSCKR |= RCC_RMVF;
@@ -45,26 +41,22 @@ void BootGuardStart()
     state.magic = kGuardMagic;
     state.watchdog_resets = 0;
   }
-  if ((flags & RCC_IWDGRSTF) != 0U) state.watchdog_resets = state.watchdog_resets + 1U;
-  safe_mode = state.watchdog_resets >= kSafeModeResets;
-
-  IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-  IWDG_SetPrescaler(IWDG_Prescaler_256);
-  IWDG_SetReload(kReload);
-  IWDG_ReloadCounter();
-  IWDG_Enable();
+  if ((flags & RCC_IWDGRSTF) != 0U)
+  {
+    state.watchdog_resets = state.watchdog_resets + 1U;
+  }
+  safe_mode_ = state.watchdog_resets >= kSafeModeResets;
 }
 
-void BootGuardFeed()
+void BootGuard::Feed()
 {
-  IWDG_ReloadCounter();
-  if (!cleared &&
+  watchdog_.Feed();
+  if (!cleared_ &&
       static_cast<uint32_t>(LibXR::Timebase::GetMilliseconds()) >= kClearAfterMs)
   {
     State().watchdog_resets = 0;
-    cleared = true;
+    cleared_ = true;
   }
 }
 
-bool SafeMode() { return safe_mode; }
 }  // namespace XrDap

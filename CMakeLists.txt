@@ -1,90 +1,52 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP CH32 application: CMSIS-DAP v2 probe on FreeRTOS, linked behind the
-# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|v305.
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v3.cmake")
+# XR-DAP CH32 application: CMSIS-DAP v2 probe in a single loop without an RTOS, linked behind the
+# bootloader. A preset selects the firmware (cmake --preset wdap; cmake --list-presets), or
+# -DXRDAP_BOARD=wdap|v305|linkw the board. The same build makes the board's boot chain
+# (bootloader/, a project of its own) in <build>/bootloader/.
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/xrdap.cmake")
 
-# Firmware version, reported in DAP_Info: the version below plus the commit it was built
-# from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A build from a copy
-# without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
-project(xrdap_ch32v3 VERSION 0.2.0 LANGUAGES C CXX ASM)
-if(NOT DEFINED XRDAP_GIT_REV)
-  execute_process(COMMAND git rev-parse --short=7 HEAD
-                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                  OUTPUT_VARIABLE XRDAP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE
-                  ERROR_QUIET RESULT_VARIABLE _git_result)
-  if(_git_result EQUAL 0)
-    execute_process(COMMAND git status --porcelain --untracked-files=no
-                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                    OUTPUT_VARIABLE _git_dirty OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET)
-    if(_git_dirty)
-      string(APPEND XRDAP_GIT_REV ".dirty")
-    endif()
-  else()
-    set(XRDAP_GIT_REV "")
-  endif()
-endif()
-set(XRDAP_FIRMWARE_VERSION "${PROJECT_VERSION}")
-if(XRDAP_GIT_REV)
-  string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
-endif()
+project(xrdap_ch32v3 VERSION ${XRDAP_VERSION} LANGUAGES C CXX ASM)
 message(STATUS "XR-DAP firmware version ${XRDAP_FIRMWARE_VERSION}")
 xrdap_setup_flags(O2)
 xrdap_setup_libraries()
 
-xrdap_add_platform_library()
+xrdap_add_chip_library()
 
-set(FREERTOS_DIR "${XRDAP_PLATFORM_DIR}/FreeRTOS")
-set(FREERTOS_INCLUDES
-    "${FREERTOS_DIR}/include"
-    "${FREERTOS_DIR}/portable/GCC/RISC-V"
-    "${FREERTOS_DIR}/portable/GCC/RISC-V/chip_specific_extensions/RV32I_PFIC_no_extensions")
-file(GLOB FREERTOS_SOURCES "${FREERTOS_DIR}/*.c" "${FREERTOS_DIR}/portable/GCC/RISC-V/*.c")
-add_library(freertos OBJECT ${FREERTOS_SOURCES}
-            "${FREERTOS_DIR}/portable/MemMang/heap_4.c"
-            "${FREERTOS_DIR}/portable/GCC/RISC-V/portASM.S")
-target_include_directories(freertos PUBLIC ${FREERTOS_INCLUDES} ${XRDAP_PLATFORM_INCLUDES})
-target_compile_definitions(freertos PUBLIC ${XRDAP_COMMON_DEFINES})
-
-set(LIBXR_SYSTEM FreeRTOS)
+set(LIBXR_SYSTEM None)
 set(LIBXR_DRIVER ch)
-set(LIBXR_CH32_CONFIG_FILE ch32v30x_conf.h)
+set(LIBXR_CH32_CONFIG_FILE ${XRDAP_CHIP_CONFIG_FILE})
 add_subdirectory(libxr)
-target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES} ${FREERTOS_INCLUDES})
+target_include_directories(xr PUBLIC ${XRDAP_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
-add_executable(xrdap.elf app/main.c app/app_main.cpp app/boot_guard.cpp app/config.cpp
-                         app/settings_log.cpp app/sampler_task.cpp common/sysclk.c)
+# The common probe (app/probe.hpp) and the board's composition (boards/<board>/board.cpp) with
+# the parts it lists in XRDAP_BOARD_SOURCES.
+add_executable(xrdap.elf app/main.c app/probe.cpp app/boot_guard.cpp app/sampler_tick.cpp
+                         app/boot_slot_info.cpp common/sysclk.c
+                         boards/${XRDAP_BOARD}/board.cpp ${XRDAP_BOARD_SOURCES})
 target_compile_definitions(xrdap.elf PRIVATE XRDAP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
-                           XRDAP_APP_STACK_WORDS=${XRDAP_APP_STACK_WORDS}
                            XRDAP_DAP_PACKET_COUNT=${XRDAP_DAP_PACKET_COUNT}
-                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES})
-# XRDAP-Core: session owner and command executor, XR vendor extension, status light
-# rule, probe identity and family constants (app/xrdap_port.hpp is its port header).
+                           XRDAP_RING_BYTES=${XRDAP_RING_BYTES}
+                           XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
+# XRDAP-Core (app/xrdap_port.hpp is its port header) and the SX1281 Module, header only.
 include(xrdap-core/xrdap_core.cmake)
 target_sources(xrdap.elf PRIVATE ${XRDAP_CORE_SOURCES})
-target_include_directories(xrdap.elf PRIVATE app ${XRDAP_CORE_INCLUDE_DIRS})
-target_compile_definitions(xrdap.elf PRIVATE XRDAP_FIRMWARE_VERSION="${XRDAP_FIRMWARE_VERSION}")
-if(XRDAP_HAS_RADIO)
-  # Role and modulation are settings in flash (app/config.hpp); one image serves both
-  # ends of the link.
-  target_sources(xrdap.elf PRIVATE app/sx1281.cpp app/link_protocol.cpp app/link_session.cpp
-                                   app/link_transport.cpp app/dap_forwarding.cpp
-                                   app/dap_session.cpp app/pair_identity.cpp
-                                   app/radio_command.cpp app/pairing.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_RADIO)
-endif()
-if(XRDAP_HAS_STATUS_LIGHTS)
-  target_sources(xrdap.elf PRIVATE app/status_lights.cpp app/ws2812.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LIGHTS)
-endif()
-if(XRDAP_HAS_STATUS_LED)
-  target_sources(xrdap.elf PRIVATE app/status_led.cpp)
-  target_compile_definitions(xrdap.elf PRIVATE XRDAP_HAS_STATUS_LED)
-endif()
-target_link_libraries(xrdap.elf PRIVATE platform freertos xr)
+target_include_directories(xrdap.elf PRIVATE app common modules/SX1281
+                                             ${XRDAP_CORE_INCLUDE_DIRS})
+target_link_libraries(xrdap.elf PRIVATE chip xr)
 # The image stops in front of the settings and the seal.
 math(EXPR XRDAP_APP_IMAGE_SIZE "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}"
      OUTPUT_FORMAT HEXADECIMAL)
 xrdap_add_image(xrdap.elf ${XRDAP_APP_BASE} ${XRDAP_APP_IMAGE_SIZE} ${XRDAP_C_HEAP_SIZE})
+
+# The boot chain of the same board: a project of its own, since it builds LibXR again for
+# 96 MHz and -Os.
+include(ExternalProject)
+ExternalProject_Add(bootloader
+  SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/bootloader"
+  BINARY_DIR "${CMAKE_BINARY_DIR}/bootloader"
+  CMAKE_ARGS -DXRDAP_BOARD=${XRDAP_BOARD} -DXRDAP_APP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
+             -DCOMPILER_PREFIX=${COMPILER_PREFIX} -DXRDAP_GIT_REV=${XRDAP_GIT_REV}
+  INSTALL_COMMAND ""
+  BUILD_ALWAYS ON)

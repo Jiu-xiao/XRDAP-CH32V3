@@ -6,6 +6,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format 21.1.8 (libxr configuration), without the WCH SDK in chips/
+        run: |
+          pip install clang-format==21.1.8
+          git ls-files '*.hpp' '*.cpp' '*.h' '*.c' \
+            ':!:chips/*/Core/*' ':!:chips/*/Peripheral/*' \
+            | xargs clang-format --dry-run --Werror
+
   build:
     runs-on: ubuntu-latest
     # WCH GCC 15.2 (riscv32-wch-elf-*) and CMake, from xrobot-org/Docker-Image, pinned by
@@ -16,10 +27,10 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Build bootloaders and applications (evt, wdap, v305)
+      - name: Build the boot chain and the application of every preset in CMakePresets.json
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          tools/build.sh evt wdap v305
+          tools/build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: xrdap-ch32v3-${{ github.sha }}
@@ -29,10 +40,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - name: PC tests of the pure logic
         run: |
           cmake -S tests -B build/tests
           cmake --build build/tests
           ctest --test-dir build/tests --output-on-failure
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [format, build, tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xrdap-ch32v3-${{ github.sha }}
+          path: images
+      # One archive per board: the images have the same names on every board, and
+      # dfu_update.py --bootloader-dir looks for them by these names.
+      - name: Package the images
+        run: |
+          mkdir release
+          for dir in images/*/; do
+            name="xrdap-ch32v3-$(basename "$dir")"
+            mkdir "$name"
+            cp "$dir"* LICENSE tools/dfu_update.py "$name/"
+            zip -r "release/$name.zip" "$name"
+          done
+          cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      # A draft: the release text is added by hand before it is published.
+      - name: Create the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: true
