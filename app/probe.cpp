@@ -21,10 +21,6 @@ constexpr LibXR::Debug::SwdGpioTiming kSwdTiming{
 // work.
 constexpr uint32_t kStepWaitMs = 10;
 
-alignas(64) uint8_t ep0_buffer[64];
-alignas(64) uint8_t ep1_dap_in[2 * Probe::kDapPacketSize];
-alignas(64) uint8_t ep1_dap_out[2 * Probe::kDapPacketSize];
-
 char serial[SerialBufferSize(kChipUidSize)];
 
 constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
@@ -55,14 +51,12 @@ Probe::PlatformInit::PlatformInit() { LibXR::PlatformInit(); }
 Probe::Probe()
     : swd_(swclk_, swdio_, XRDAP_APP_SYSCLK_HZ, kSwdTiming),
       nreset_(TargetResetOutput(Board::kNreset)),
-      dap_(LibXR::USB::Endpoint::EPNumber::EP1, LibXR::USB::Endpoint::EPNumber::EP1, swd_,
-           &nreset_),
+      dap_(kDapInEndpoint, kDapOutEndpoint, swd_, &nreset_),
       vendor_(swd_),
       exec_(dap_, vendor_, activity_),
       tick_(vendor_),
       usb_control_(dap_, exec_),
-      usb_({{ep0_buffer}, {ep1_dap_out}}, {{ep0_buffer}, {ep1_dap_in}}, Family::kUsbVid,
-           Family::kUsbPid, kUsbBcd, {&kStrings}, {{&dap_, &dfu_}},
+      usb_(Family::kUsbVid, Family::kUsbPid, kUsbBcd, {&kStrings}, {{&dap_, &dfu_}},
            {ChipUid(), kChipUidSize})
 {
   FormatSerial(ChipUid(), kChipUidSize, serial);

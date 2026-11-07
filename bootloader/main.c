@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "ch32v30x.h"
 #include "sysclk.h"
+#include "xrdap_chip.h"
 
 void bootloader_main(void);
 void __libc_init_array(void);

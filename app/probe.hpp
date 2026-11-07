@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// What every CH32V3 probe has: the watchdog, the SWD pins, the CMSIS-DAP v2 and DFU
-// runtime interfaces on USBHS, XRDAP-Core's vendor extension and executor, the sampling
-// tick and the control port. A board file (boards/<name>.cpp) constructs the Probe, the
-// parts the board has on top (part.hpp), and runs the main loop with them.
+// What every CH32 probe has: the watchdog, the SWD pins, the CMSIS-DAP v2 and DFU runtime
+// interfaces on USB (chip_usb.hpp), XRDAP-Core's vendor extension and executor, the
+// sampling tick and the control port. A board file (boards/<name>.cpp) constructs the
+// Probe, the parts the board has on top (part.hpp), and runs the main loop with them.
 //
 // The main loop is the execution context: every round it feeds the watchdog, polls the
 // parts, runs the executor (USB commands, control requests, sampling) and carries out a
@@ -12,7 +12,7 @@
 // when no part has work; DFU DETACH therefore restarts into the bootloader soon after
 // its advertised timeout.
 //
-// 每块 CH32V3 探针都有的东西：看门狗、SWD 引脚、USBHS 上的 CMSIS-DAP v2 和
+// 每块 CH32 探针都有的东西：看门狗、SWD 引脚、USB（chip_usb.hpp）上的 CMSIS-DAP v2 和
 // DFU runtime 接口、XRDAP-Core 的厂商扩展和执行器、采样节拍和控制口。
 // 板子文件（boards/<name>.cpp）构造 Probe 和这块板另有的部件（part.hpp），
 // 用它们运行主循环。
@@ -29,7 +29,7 @@
 #include "boot_guard.hpp"
 #include "ch32_gpio.hpp"
 #include "ch32_timebase.hpp"
-#include "ch32_usb_dev.hpp"
+#include "chip_usb.hpp"
 #include "daplink_v2_profile_swd.hpp"
 #include "debug/swd_general_gpio.hpp"
 #include "dfu/dfu_runtime.hpp"
@@ -125,7 +125,7 @@ class Probe
   Exec exec_;
   SamplerTick tick_;
   Control::UsbControl<Dap> usb_control_;
-  LibXR::CH32USBOtgHS usb_;
+  ProbeUsb<kDapPacketSize> usb_;
   Part* const* parts_ = nullptr;
   size_t part_count_ = 0;
 };

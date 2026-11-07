@@ -23,7 +23,7 @@ target_compile_options(xrdap_tests PRIVATE -Wall -Wextra)
 # extension.
 add_executable(xrdap_app_tests app_test.cpp "${XRDAP_ROOT}/app/sampler_tick.cpp")
 target_include_directories(xrdap_app_tests PRIVATE fake "${XRDAP_ROOT}/common"
-                           "${XRDAP_ROOT}/app")
+                           "${XRDAP_ROOT}/app" "${XRDAP_ROOT}/platform")
 target_compile_options(xrdap_app_tests PRIVATE -Wall -Wextra)
 
 enable_testing()

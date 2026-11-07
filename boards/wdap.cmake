@@ -11,5 +11,5 @@ set(XRDAP_APP_SYSCLK_HZ 216000000)
 set(XRDAP_C_HEAP_SIZE 0x4000)
 # The board's composition (boards/wdap.cpp) and its parts.
 set(XRDAP_BOARD_APP wdap)
-set(XRDAP_BOARD_SOURCES app/radio.cpp app/settings_store.cpp app/status_lights.cpp
+set(XRDAP_BOARD_SOURCES app/sx1281_radio.cpp app/settings_store.cpp app/status_lights.cpp
     app/ws2812.cpp)

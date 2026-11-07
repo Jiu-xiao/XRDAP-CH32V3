@@ -14,7 +14,7 @@ xrdap_add_platform_library()
 
 set(LIBXR_SYSTEM None)
 set(LIBXR_DRIVER ch)
-set(LIBXR_CH32_CONFIG_FILE ch32v30x_conf.h)
+set(LIBXR_CH32_CONFIG_FILE ${XRDAP_CHIP_CONFIG_FILE})
 add_subdirectory(libxr)
 target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})

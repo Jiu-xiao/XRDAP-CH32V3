@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "sampler_tick.hpp"
 
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
 namespace XrDap
 {
@@ -11,11 +11,12 @@ namespace
 
 constexpr uint32_t kMaxCounterUs = 65535U;
 
-// TIM7 的时钟是 PCLK1，APB1 分频时翻倍（RM 时钟树）。HCLK 等于内核时钟，APB1 不分频
-// 或二分频（common/sysclk.c），所以它等于内核时钟。 / TIM7 runs from PCLK1, doubled when
-// APB1 is divided (RM, clock tree). HCLK is the core clock and APB1 is undivided or
-// divided by 2 (common/sysclk.c), so TIM7 runs at the core clock.
-uint32_t Tim7ClockHz() { return SystemCoreClock; }
+// 节拍定时器在 APB1 上，时钟是 PCLK1，APB1 分频时翻倍（RM 时钟树）。HCLK 等于内核时钟，
+// APB1 不分频或二分频（common/sysclk.c），所以它等于内核时钟。 / The tick timer is on
+// APB1 and runs from PCLK1, doubled when APB1 is divided (RM, clock tree). HCLK is the
+// core clock and APB1 is undivided or divided by 2 (common/sysclk.c), so the timer runs
+// at the core clock.
+uint32_t TickClockHz() { return SystemCoreClock; }
 
 }  // namespace
 
@@ -24,11 +25,12 @@ SamplerTick* SamplerTick::instance = nullptr;
 SamplerTick::SamplerTick(DapVendor& vendor) : vendor_(vendor)
 {
   instance = this;
-  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM7, ENABLE);
-  TIM_Cmd(TIM7, DISABLE);
-  TIM7->CTLR1 = TIM_URS;  // 只有溢出产生中断，UG 不产生 / only overflows interrupt
-  TIM_ITConfig(TIM7, TIM_IT_Update, ENABLE);
-  NVIC_EnableIRQ(TIM7_IRQn);
+  RCC_APB1PeriphClockCmd(XRDAP_TICK_TIM_RCC, ENABLE);
+  TIM_Cmd(XRDAP_TICK_TIM, DISABLE);
+  XRDAP_TICK_TIM->CTLR1 =
+      TIM_URS;  // 只有溢出产生中断，UG 不产生 / only overflows interrupt
+  TIM_ITConfig(XRDAP_TICK_TIM, TIM_IT_Update, ENABLE);
+  NVIC_EnableIRQ(XRDAP_TICK_IRQN);
 }
 
 void SamplerTick::Start(uint32_t period_us)
@@ -37,18 +39,19 @@ void SamplerTick::Start(uint32_t period_us)
   {
     period_us = 1U;
   }
-  TIM_Cmd(TIM7, DISABLE);
+  TIM_Cmd(XRDAP_TICK_TIM, DISABLE);
   repeat_ = (period_us + kMaxCounterUs - 1U) / kMaxCounterUs;
   count_ = 0U;
-  TIM7->PSC = static_cast<uint16_t>(Tim7ClockHz() / 1000000U - 1U);
-  TIM7->ATRLR = static_cast<uint16_t>(period_us / repeat_ - 1U);
-  TIM7->SWEVGR = TIM_PSCReloadMode_Immediate;  // UG 装入 PSC 和 ATRLR / UG loads them
-  TIM7->CNT = 0U;
-  TIM_ClearITPendingBit(TIM7, TIM_IT_Update);
-  TIM_Cmd(TIM7, ENABLE);
+  XRDAP_TICK_TIM->PSC = static_cast<uint16_t>(TickClockHz() / 1000000U - 1U);
+  XRDAP_TICK_TIM->ATRLR = static_cast<uint16_t>(period_us / repeat_ - 1U);
+  XRDAP_TICK_TIM->SWEVGR =
+      TIM_PSCReloadMode_Immediate;  // UG 装入 PSC 和 ATRLR / UG loads them
+  XRDAP_TICK_TIM->CNT = 0U;
+  TIM_ClearITPendingBit(XRDAP_TICK_TIM, TIM_IT_Update);
+  TIM_Cmd(XRDAP_TICK_TIM, ENABLE);
 }
 
-void SamplerTick::Stop() { TIM_Cmd(TIM7, DISABLE); }
+void SamplerTick::Stop() { TIM_Cmd(XRDAP_TICK_TIM, DISABLE); }
 
 void SamplerTick::OnInterrupt()
 {
@@ -63,13 +66,14 @@ void SamplerTick::OnInterrupt()
 
 }  // namespace XrDap
 
-extern "C" __attribute__((interrupt("WCH-Interrupt-fast"))) void TIM7_IRQHandler(void)
+extern "C" __attribute__((interrupt("WCH-Interrupt-fast"))) void XRDAP_TICK_IRQ_HANDLER(
+    void)
 {
-  if (TIM_GetITStatus(TIM7, TIM_IT_Update) == RESET)
+  if (TIM_GetITStatus(XRDAP_TICK_TIM, TIM_IT_Update) == RESET)
   {
     return;
   }
-  TIM_ClearITPendingBit(TIM7, TIM_IT_Update);
+  TIM_ClearITPendingBit(XRDAP_TICK_TIM, TIM_IT_Update);
   if (XrDap::SamplerTick::instance != nullptr)
   {
     XrDap::SamplerTick::instance->OnInterrupt();

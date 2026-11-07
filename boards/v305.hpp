@@ -21,7 +21,7 @@
 
 #include "board_pin.hpp"
 #include "ch32_gpio.hpp"
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
 namespace XrDap::Board
 {

@@ -6,7 +6,7 @@
 // whether to start the application or stay in DFU mode. It stays when the application
 // asked for it through the boot mailbox (DFU DETACH), when the board's boot key is held,
 // or when the application window holds no valid sealed image. In DFU mode it exposes two
-// USB DFU interfaces on USBHS (dfu-util works; WinUSB is announced for Windows):
+// USB DFU interfaces (dfu-util works; WinUSB is announced for Windows):
 // interface 0 writes the application, and a completed download writes the seal record and
 // starts the new image; interface 1 writes a bootloader image into the other slot, closes
 // it with a slot record whose sequence number is one more than its own, and restarts in
@@ -16,7 +16,7 @@
 // stage1 从两个引导槽之一启动它（common/boot_slots.hpp）；同一份代码为每个槽各链接一次
 // （XRDAP_BL_SLOT）。每次复位时决定启动应用还是停留在 DFU 模式。应用经启动信箱请求
 // （DFU DETACH）、上电时按住板上的 bootloader 键，或应用区没有有效的带 seal 镜像时停留。
-// DFU 模式下在 USBHS 上提供两个 USB DFU 接口（可用 dfu-util，Windows 上自动使用
+// DFU 模式下提供两个 USB DFU 接口（可用 dfu-util，Windows 上自动使用
 // WinUSB）：接口 0 写应用，下载完成后写入 seal 记录并启动新镜像；接口 1 把引导镜像
 // 写进另一个槽，用序号比自己大 1 的槽记录收尾，然后重启并停在 DFU，由 stage1 启动新的
 // 引导。
@@ -29,15 +29,15 @@
 #include "boot_slots.hpp"
 #include "ch32_flash.hpp"
 #include "ch32_timebase.hpp"
-#include "ch32_usb_dev.hpp"
-#include "ch32v30x.h"
 #include "chip_uid.hpp"
+#include "chip_usb.hpp"
 #include "dfu/dfu_bootloader.hpp"
 #include "flash_layout.hpp"
 #include "libxr.hpp"
 #include "reserved_ram.h"
 #include "thread.hpp"
 #include "xrdap/probe/probe_identity.hpp"
+#include "xrdap_chip.h"
 
 namespace
 {
@@ -276,8 +276,6 @@ extern "C" __attribute__((used)) const char xrdap_bl_version[] =
     "XRDAP-BLVER:" XRDAP_FIRMWARE_VERSION;
 static_assert(sizeof(Slots::kVersionTag) == 13U, "the literal above starts with the tag");
 
-alignas(64) uint8_t ep0_buffer[64];
-
 // The same VID:PID on every board (tools/dfu_update.py); the product string names the
 // chip.
 constexpr uint16_t kUsbVid = 0x1209;
@@ -342,7 +340,7 @@ void RecordRunningSlot()
   auto* mailbox = reinterpret_cast<volatile uint32_t*>(XRDAP_BOOT_MAILBOX_ADDR);
   mailbox[0] = XRDAP_BOOT_REQUEST_MAGIC0;
   mailbox[1] = XRDAP_BOOT_REQUEST_MAGIC1;
-  USBHSD->CONTROL = USBHS_UC_CLR_ALL | USBHS_UC_RESET_SIE;  // drops the pull-up
+  XrDap::UsbDropPullUp();
   NVIC_SystemReset();
   for (;;)
   {
@@ -354,11 +352,7 @@ void RecordRunningSlot()
 [[noreturn]] void JumpToApp()
 {
   RecordRunningSlot();
-  NVIC_DisableIRQ(USBHS_IRQn);
-  NVIC_DisableIRQ(USBHSWakeup_IRQn);
-  USBHSD->INT_EN = 0U;
-  USBHSD->CONTROL = USBHS_UC_CLR_ALL | USBHS_UC_RESET_SIE;  // also drops the pull-up
-  USBHSD->CONTROL = 0U;
+  XrDap::UsbStop();
 
   __disable_irq();
   SysTick->CTLR = 0U;
@@ -422,9 +416,8 @@ extern "C" void bootloader_main()
   static constexpr auto kStrings = LibXR::USB::DescriptorStrings::MakeLanguagePack(
       LibXR::USB::DescriptorStrings::Language::EN_US, XrDap::kVendorName,
       XRDAP_BL_PRODUCT " " XRDAP_FIRMWARE_VERSION, XrDap::kSerialPrefix);
-  static LibXR::CH32USBOtgHS usb({{ep0_buffer}}, {{ep0_buffer}}, kUsbVid, kUsbPid,
-                                 XRDAP_VERSION_BCD, {&kStrings}, {{&dfu, &peer_dfu}},
-                                 {XrDap::ChipUid(), XrDap::kChipUidSize});
+  static XrDap::BootUsb usb(kUsbVid, kUsbPid, XRDAP_VERSION_BCD, {&kStrings},
+                            {{&dfu, &peer_dfu}}, {XrDap::ChipUid(), XrDap::kChipUidSize});
   usb.Init(false);
   usb.Start(false);
 

@@ -1,16 +1,17 @@
-# Shared CH32V307 build setup for the bootloader and the application projects:
-# toolchain, CPU flags, board selection, the WCH peripheral library and the image
-# helpers. Each project includes this file before project().
+# Shared CH32 build setup for the bootloader and the application projects: toolchain, CPU
+# flags, board selection, the WCH peripheral library and the image helpers. Each project
+# includes this file before project().
 #
 # Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, core clock, the
 # bootloader's LED (XRDAP_HAS_LED), the memory of its chip, and
 # the application's composition XRDAP_BOARD_APP with its parts XRDAP_BOARD_SOURCES),
 # boards/<name>.hpp (pins used by the firmware) and boards/<XRDAP_BOARD_APP>.cpp.
+# Chip family: XRDAP_CHIP_FAMILY in the board's cmake selects cmake/family-<name>.cmake
+# (SDK directory, startup file, compiler flags); the default is ch32v30x.
 
 if(NOT DEFINED XRDAP_ROOT)
   get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
-set(XRDAP_PLATFORM_DIR "${XRDAP_ROOT}/platform")
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
@@ -36,6 +37,10 @@ if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()
 include("${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+if(NOT DEFINED XRDAP_CHIP_FAMILY)
+  set(XRDAP_CHIP_FAMILY ch32v30x)
+endif()
+include("${XRDAP_ROOT}/cmake/family-${XRDAP_CHIP_FAMILY}.cmake")
 # Application core clock (common/sysclk.h); the bootloader runs at 96 MHz.
 if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
   set(XRDAP_APP_SYSCLK_HZ 144000000)
@@ -81,6 +86,8 @@ endif()
 #   XRDAP_BL_FIRST_SLOT   slot (a or b) that boot-chain and migrate-to-ab write
 #   XRDAP_MIGRATE_BASE/SIZE  application window and image limit of the old bootloader,
 #                         where migrate-to-ab is linked
+#   XRDAP_BOOT_MIGRATION  OFF on a board that never ran the old bootloader: no
+#                         migrate-to-ab and no rewrite-boot-chain
 #   XRDAP_BL_HEAP_SIZE    heap of the bootloader
 #   XRDAP_BL_PRODUCT      USB product string of the bootloader, without the version
 set(XRDAP_STAGE1_BASE 0x00000000)
@@ -93,6 +100,9 @@ set(XRDAP_BL_SLOT_SIZE 0x0000D000)
 set(XRDAP_BL_RECORD_SIZE 256)
 if(NOT DEFINED XRDAP_BL_FIRST_SLOT)
   set(XRDAP_BL_FIRST_SLOT a)
+endif()
+if(NOT DEFINED XRDAP_BOOT_MIGRATION)
+  set(XRDAP_BOOT_MIGRATION ON)
 endif()
 if(NOT DEFINED XRDAP_MIGRATE_BASE)
   set(XRDAP_MIGRATE_BASE 0x00010000)
@@ -111,8 +121,8 @@ endif()
 set(XRDAP_SEAL_SIZE 256)
 set(XRDAP_CONFIG_SIZE 2048)
 
-set(XRDAP_CPU_FLAGS
-    "-march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f -msmall-data-limit=8 -mno-save-restore")
+list(JOIN XRDAP_ARCH_FLAGS " " _arch_flags)
+set(XRDAP_CPU_FLAGS "${_arch_flags} -msmall-data-limit=8 -mno-save-restore")
 
 macro(xrdap_setup_flags opt_level)
   set(_common "-Wall -Wextra -fno-builtin -ffunction-sections -fdata-sections -fsigned-char")
@@ -126,13 +136,12 @@ macro(xrdap_setup_flags opt_level)
   set(CMAKE_BUILD_TYPE "" CACHE STRING "" FORCE)
 endmacro()
 
-# WCH GCC 15 has no Zaamo-only ilp32f multilib; link against the compatible
-# hard-float library directories without changing the ISA used for compilation.
+# WCH GCC 15 has no Zaamo-only multilib; link against the compatible library directories
+# (XRDAP_MULTILIB_FLAGS) without changing the ISA used for compilation.
 macro(xrdap_setup_libraries)
   foreach(_lib libgcc.a libc_nano.a)
     execute_process(
-      COMMAND ${CMAKE_C_COMPILER} -march=rv32imafc_zaamo_zalrsc -mabi=ilp32f
-              -print-file-name=${_lib}
+      COMMAND ${CMAKE_C_COMPILER} ${XRDAP_MULTILIB_FLAGS} -print-file-name=${_lib}
       OUTPUT_VARIABLE _path OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
     get_filename_component(_dir "${_path}" DIRECTORY)
     link_directories(BEFORE "${_dir}")
@@ -144,7 +153,7 @@ endmacro()
 
 # Defines shared by every target: chip family, crystal and the layout.
 set(XRDAP_COMMON_DEFINES
-    CH32V30x_D8C
+    ${XRDAP_CHIP_DEFINE}
     HSE_VALUE=${XRDAP_HSE_HZ}
     XRDAP_APP_SYSCLK_HZ=${XRDAP_APP_SYSCLK_HZ}
     XRDAP_APP_BASE=${XRDAP_APP_BASE}
@@ -165,6 +174,7 @@ list(APPEND XRDAP_COMMON_DEFINES XRDAP_BOOT_REQUEST_MAGIC0=${XRDAP_BOOT_REQUEST_
      XRDAP_BOOT_REQUEST_MAGIC1=${XRDAP_BOOT_REQUEST_MAGIC1}u)
 
 set(XRDAP_PLATFORM_INCLUDES
+    "${XRDAP_PLATFORM_DIR}"
     "${XRDAP_PLATFORM_DIR}/Core"
     "${XRDAP_PLATFORM_DIR}/Peripheral/inc"
     "${XRDAP_ROOT}/boards"
@@ -175,8 +185,8 @@ macro(xrdap_add_platform_library)
   file(GLOB _peripheral_sources "${XRDAP_PLATFORM_DIR}/Peripheral/src/*.c")
   file(GLOB _core_sources "${XRDAP_PLATFORM_DIR}/Core/*.c")
   add_library(platform OBJECT ${_peripheral_sources} ${_core_sources}
-              "${XRDAP_PLATFORM_DIR}/startup_ch32v30x_D8C.S"
-              "${XRDAP_PLATFORM_DIR}/syscalls.c")
+              "${XRDAP_PLATFORM_DIR}/${XRDAP_STARTUP_FILE}"
+              "${XRDAP_ROOT}/platform/syscalls.c")
   target_include_directories(platform PUBLIC ${XRDAP_PLATFORM_INCLUDES})
   target_compile_definitions(platform PUBLIC ${XRDAP_COMMON_DEFINES})
 endmacro()
@@ -185,7 +195,7 @@ endmacro()
 # heap_size bytes (operator new on bare metal, newlib malloc) and emits .hex/.bin.
 function(xrdap_add_image target base size heap_size)
   target_link_options(${target} PRIVATE
-    -T "${XRDAP_PLATFORM_DIR}/Link.ld"
+    -T "${XRDAP_ROOT}/platform/Link.ld"
     -Wl,--defsym=IMAGE_FLASH_BASE=${base}
     -Wl,--defsym=IMAGE_FLASH_LENGTH=${size}
     -Wl,--defsym=HEAP_SIZE=${heap_size}
@@ -194,7 +204,7 @@ function(xrdap_add_image target base size heap_size)
     -nostartfiles -Wl,--gc-sections -Wl,--print-memory-usage
     -Wl,-Map=${PROJECT_BINARY_DIR}/${target}.map
     --specs=nano.specs --specs=nosys.specs
-    -march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f)
+    ${XRDAP_ARCH_FLAGS})
   target_link_libraries(${target} PRIVATE m c)
   add_custom_command(TARGET ${target} POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${target}> ${PROJECT_BINARY_DIR}/${target}.hex

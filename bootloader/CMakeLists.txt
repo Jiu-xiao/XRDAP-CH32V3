@@ -32,7 +32,7 @@ xrdap_add_platform_library()
 
 set(LIBXR_SYSTEM None)
 set(LIBXR_DRIVER ch)
-set(LIBXR_CH32_CONFIG_FILE ch32v30x_conf.h)
+set(LIBXR_CH32_CONFIG_FILE ${XRDAP_CHIP_CONFIG_FILE})
 add_subdirectory("${XRDAP_ROOT}/libxr" libxr)
 target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
@@ -45,7 +45,7 @@ set_target_properties(stage1.elf PROPERTIES LINKER_LANGUAGE C)
 target_compile_definitions(stage1.elf PRIVATE ${XRDAP_COMMON_DEFINES} ${XRDAP_BOOT_KEY_DEFINES})
 target_link_options(stage1.elf PRIVATE -T "${CMAKE_CURRENT_LIST_DIR}/stage1.ld" -nostartfiles
                     -nostdlib -Wl,--print-memory-usage
-                    -march=rv32imcf_zicsr_zifencei_zaamo -mabi=ilp32f)
+                    ${XRDAP_ARCH_FLAGS})
 add_custom_command(TARGET stage1.elf POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:stage1.elf> ${PROJECT_BINARY_DIR}/stage1.hex
   COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:stage1.elf> ${PROJECT_BINARY_DIR}/stage1.bin
@@ -97,6 +97,7 @@ if(Python3_FOUND)
     VERBATIM)
   add_custom_target(boot_chain ALL DEPENDS ${PROJECT_BINARY_DIR}/boot-chain.bin)
 
+  if(XRDAP_BOOT_MIGRATION)
   # Migration of a board with the old bootloader (migrate.c): an application for the old
   # layout (XRDAP_MIGRATE_BASE) that carries boot-chain-parts.bin (stage 1's sector and
   # the first slot).
@@ -119,6 +120,7 @@ if(Python3_FOUND)
   add_dependencies(rewrite-boot-chain.elf boot_chain)
   math(EXPR _rewrite_size "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}" OUTPUT_FORMAT HEXADECIMAL)
   xrdap_add_image(rewrite-boot-chain.elf ${XRDAP_APP_BASE} ${_rewrite_size} 0x400)
+  endif()
 else()
   message(STATUS "No Python 3: boot-chain and migrate-to-ab are not built (tools/boot_chain.py)")
 endif()

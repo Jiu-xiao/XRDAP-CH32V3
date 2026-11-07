@@ -5,8 +5,9 @@
 /*
  * Core clock of each image, chosen by the board files (boards/<name>.cmake) instead of
  * the WCH system file, which is left at its reset clock (HSI). The PLL multiplies the
- * board's crystal (HSE_VALUE) up to XRDAP_SYSCLK_HZ; HCLK and PCLK2 run at the core
- * clock, PCLK1 at half of it. HSE stays on: the USBHS PHY PLL uses it as reference.
+ * board's crystal (XRDAP_PLL_INPUT_HZ of xrdap_chip.h) up to XRDAP_SYSCLK_HZ; HCLK and
+ * PCLK2 run at the core clock, PCLK1 at half of it. HSE stays on: the USBHS PHY PLL and
+ * the CH32V208's radio use it as reference.
  *
  * Clocks used: the bootloader 96 MHz; the evt, wdap-144 and v305-144 applications
  * 144 MHz (the rated maximum of the CH32V307 and CH32V305); the wdap and v305
@@ -15,8 +16,9 @@
  * with restarts and similar problems.
  *
  * 各镜像的内核时钟由板级文件（boards/<名字>.cmake）选择，WCH 的系统文件保持复位时钟
- * （HSI）。PLL 把板上晶振（HSE_VALUE）倍频到 XRDAP_SYSCLK_HZ；HCLK、PCLK2 等于内核
- * 时钟，PCLK1 为其一半。HSE 保持开启：USBHS PHY 的 PLL 以它为参考。
+ * （HSI）。PLL 把板上晶振（xrdap_chip.h 的 XRDAP_PLL_INPUT_HZ）倍频到 XRDAP_SYSCLK_HZ；
+ * HCLK、PCLK2 等于内核时钟，PCLK1 为其一半。HSE 保持开启：USBHS PHY 的 PLL 和 CH32V208
+ * 的射频以它为参考。
  *
  * 使用的时钟：bootloader 96 MHz；evt、wdap-144、v305-144 应用 144 MHz（CH32V307、
  * CH32V305 的标称上限）；wdap 和 v305 应用 216 MHz（12 MHz x 18），**超过**标称时钟。

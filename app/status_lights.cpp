@@ -28,7 +28,7 @@ void AddWhite(Light::Rgb& c, uint32_t v)
 
 }  // namespace
 
-StatusLights::StatusLights(const Probe& probe, const RadioPart& radio)
+StatusLights::StatusLights(const Probe& probe, const RadioPart<RadioDriver>& radio)
     : probe_(probe),
       radio_(radio),
       spi_(CH32_SPI2, {spi_rx_, sizeof(spi_rx_)}, {spi_tx_, sizeof(spi_tx_)},

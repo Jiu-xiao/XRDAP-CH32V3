@@ -17,7 +17,8 @@
 #include "ch32_spi.hpp"
 #include "part.hpp"
 #include "probe.hpp"
-#include "radio.hpp"
+#include "radio_part.hpp"
+#include "sx1281_radio.hpp"
 #include "ws2812.hpp"
 #include "xrdap/light/status_light.hpp"
 
@@ -27,7 +28,7 @@ namespace XrDap
 class StatusLights final : public Part
 {
  public:
-  StatusLights(const Probe& probe, const RadioPart& radio);
+  StatusLights(const Probe& probe, const RadioPart<RadioDriver>& radio);
 
   bool Poll() override;
 
@@ -38,7 +39,7 @@ class StatusLights final : public Part
   void Draw(uint32_t now);
 
   const Probe& probe_;
-  const RadioPart& radio_;
+  const RadioPart<RadioDriver>& radio_;
   uint8_t spi_rx_[Ws2812::kFrameBytes] = {};
   uint8_t spi_tx_[Ws2812::kFrameBytes] = {};
   LibXR::CH32SPI spi_;

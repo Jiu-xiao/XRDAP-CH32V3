@@ -3,9 +3,9 @@
 
 #include <cstdint>
 
-#include "ch32v30x.h"
 #include "reserved_ram.h"
 #include "timebase.hpp"
+#include "xrdap_chip.h"
 
 namespace XrDap
 {
@@ -31,7 +31,7 @@ volatile GuardState& State()
 
 }  // namespace
 
-BootGuard::BootGuard() : watchdog_(kTimeoutMs, kFeedMs)
+BootGuard::BootGuard() : watchdog_(kTimeoutMs, kFeedMs, XRDAP_LSI_HZ)
 {
   const uint32_t flags = RCC->RSTSCKR;
   RCC->RSTSCKR |= RCC_RMVF;

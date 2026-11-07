@@ -34,7 +34,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
 extern const uint8_t migrate_payload[];
 extern const uint8_t migrate_payload_end[];

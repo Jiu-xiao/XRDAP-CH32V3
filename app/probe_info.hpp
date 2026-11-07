@@ -37,7 +37,8 @@ constexpr bool IsUsbProductName(std::string_view usb, std::string_view product)
          usb.substr(product.size()) == kSuffix && product.substr(0, 7) == "XR-DAP-";
 }
 using Board::kUsbBcd;
-static_assert(kUsbBcd == Family::kBcdCh32V307 || kUsbBcd == Family::kBcdCh32V305,
+static_assert(kUsbBcd == Family::kBcdCh32V307 || kUsbBcd == Family::kBcdCh32V305 ||
+                  kUsbBcd == Family::kBcdCh32V208,
               "the board's bcdDevice must be one of the CH32 values of XRDAP-Core");
 static_assert(IsUsbProductName(kUsbProductName, kProductName),
               "the board's USB product string must be its product name + \" CMSIS-DAP\"");

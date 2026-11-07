@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "sysclk.h"
 
-#include "ch32v30x.h"
+#include "xrdap_chip.h"
 
-#if (XRDAP_SYSCLK_HZ % HSE_VALUE) != 0
-#error "XRDAP_SYSCLK_HZ must be a multiple of the crystal frequency"
+#if (XRDAP_SYSCLK_HZ % XRDAP_PLL_INPUT_HZ) != 0
+#error "XRDAP_SYSCLK_HZ must be a multiple of the PLL input"
 #endif
 
-// PLL multipliers of the CH32V30x D8C (RM, RCC_CFGR0 PLLMUL with EXTEN).
-#if XRDAP_SYSCLK_HZ / HSE_VALUE == 8
-#define XRDAP_PLL_MUL RCC_PLLMULL8_EXTEN
-#elif XRDAP_SYSCLK_HZ / HSE_VALUE == 12
-#define XRDAP_PLL_MUL RCC_PLLMULL12_EXTEN
-#elif XRDAP_SYSCLK_HZ / HSE_VALUE == 18
-#define XRDAP_PLL_MUL RCC_PLLMULL18_EXTEN
+#if XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 8
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(8)
+#elif XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 12
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(12)
+#elif XRDAP_SYSCLK_HZ / XRDAP_PLL_INPUT_HZ == 18
+#define XRDAP_PLL_MUL XRDAP_PLL_MULTIPLIER(18)
 #else
 #error "no PLL multiplier for this crystal and core clock"
 #endif
