@@ -32,7 +32,7 @@ set(CMAKE_SIZE ${COMPILER_PREFIX}size)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set(XRDAP_BOARD "evt" CACHE STRING "Board configuration in boards/")
-set_property(CACHE XRDAP_BOARD PROPERTY STRINGS evt wdap wdap-144 v305 v305-144)
+set_property(CACHE XRDAP_BOARD PROPERTY STRINGS evt wdap wdap-144 v305 v305-144 linkw)
 if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # XR-DAP CH32 application: CMSIS-DAP v2 probe in a single loop without an RTOS, linked behind the
-# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|wdap-144|v305|v305-144.
+# bootloader (bootloader/ is a separate project). Board: -DXRDAP_BOARD=evt|wdap|wdap-144|v305|v305-144|linkw.
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/ch32v3.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/version.cmake")
