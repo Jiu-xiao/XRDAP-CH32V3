@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// Platform part of XRDAP-Core on the CH32V3 boards: the size of the sample frame buffer.
+// Platform part of XRDAP-Core on the CH32 boards: the size of the sample frame buffer.
 //
-// XRDAP-Core 在 CH32V3 板子上的平台部分：采样帧缓冲的大小。
+// XRDAP-Core 在 CH32 板子上的平台部分：采样帧缓冲的大小。
 
 #include <cstdint>
 

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// The 96-bit unique id of the CH32V3 (CH32V3 reference manual, "electronic signature").
+// The 96-bit unique id of the CH32 (reference manual, "electronic signature").
 // It is the id part of the probe's USB serial and the pairing hello.
 //
-// CH32V3 的 96 位芯片唯一标识（CH32V3 参考手册“电子签名”），是探针 USB 序列号和配对
+// CH32 的 96 位芯片唯一标识（参考手册“电子签名”），是探针 USB 序列号和配对
 // 握手里的标识部分。
 
 #include <cstdint>
