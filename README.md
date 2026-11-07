@@ -171,7 +171,7 @@ cmake --build build/tests
 ctest --test-dir build/tests
 ```
 
-固件版本写在 `cmake/version.cmake` 的 `XRDAP_VERSION`，编译时加上提交号，例如 `0.2.0+gc82e787`（有未提交改动时末尾加 `.dirty`）；应用经 DAP_Info 报告，引导写在 USB 产品串和槽记录里。没有 `.git` 的源码副本用 `-DXRDAP_GIT_REV=<提交号>` 指定。
+固件版本写在 `cmake/version.cmake` 的 `XRDAP_VERSION`，编译时加上提交号，例如 `0.6.0+gc82e787`（有未提交改动时末尾加 `.dirty`）；应用经 DAP_Info 报告，引导写在 USB 产品串和槽记录里。没有 `.git` 的源码副本用 `-DXRDAP_GIT_REV=<提交号>` 指定。
 
 ## 5. 参考
 

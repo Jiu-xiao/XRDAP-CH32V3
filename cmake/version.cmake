@@ -1,8 +1,8 @@
 # Firmware version shared by the application and the bootloader: XRDAP_VERSION plus the
-# commit it was built from, e.g. 0.2.0+g9c0860c (".dirty" for uncommitted changes). A
+# commit it was built from, e.g. 0.6.0+g9c0860c (".dirty" for uncommitted changes). A
 # build from a copy without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
 # The application reports it in DAP_Info, the bootloader in its USB strings and slot record.
-set(XRDAP_VERSION 0.2.0)
+set(XRDAP_VERSION 0.6.0)
 if(NOT DEFINED XRDAP_GIT_REV)
   execute_process(COMMAND git rev-parse --short=7 HEAD
                   WORKING_DIRECTORY "${XRDAP_ROOT}"
@@ -24,7 +24,7 @@ set(XRDAP_FIRMWARE_VERSION "${XRDAP_VERSION}")
 if(XRDAP_GIT_REV)
   string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
 endif()
-# Version in BCD for the USB bcdDevice field: 0.2.0 -> 0x0020.
+# Version in BCD for the USB bcdDevice field: 0.6.0 -> 0x0060.
 string(REPLACE "." ";" _version_parts "${XRDAP_VERSION}")
 list(GET _version_parts 0 _major)
 list(GET _version_parts 1 _minor)

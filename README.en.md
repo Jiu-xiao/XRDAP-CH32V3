@@ -171,7 +171,7 @@ cmake --build build/tests
 ctest --test-dir build/tests
 ```
 
-The firmware version is `XRDAP_VERSION` in `cmake/version.cmake`; the build adds the commit, e.g. `0.2.0+gc82e787` (`.dirty` at the end with uncommitted changes). The application reports it in DAP_Info, the bootloader in its USB product string and its slot record. A copy of the sources without `.git` gives the commit with `-DXRDAP_GIT_REV=<commit>`.
+The firmware version is `XRDAP_VERSION` in `cmake/version.cmake`; the build adds the commit, e.g. `0.6.0+gc82e787` (`.dirty` at the end with uncommitted changes). The application reports it in DAP_Info, the bootloader in its USB product string and its slot record. A copy of the sources without `.git` gives the commit with `-DXRDAP_GIT_REV=<commit>`.
 
 ## 5. Reference
 
