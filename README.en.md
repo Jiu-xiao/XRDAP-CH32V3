@@ -2,14 +2,15 @@
 
 [中文](README.md)
 
-A CMSIS-DAP v2 debug probe built on the CH32V307 and the CH32V305 with [libxr](https://github.com/xrobot-org/libxr). It provides a Bulk v2 DAP interface over USB high speed (480 Mbit/s) with 1024-byte packets, so Keil, pyOCD, probe-rs and OpenOCD use it as an ordinary CMSIS-DAP probe. A USB DFU bootloader in the flash keeps firmware updates to a USB cable.
+A CMSIS-DAP v2 debug probe built on the CH32V307, the CH32V305 and the CH32V208 with [libxr](https://github.com/xrobot-org/libxr). It provides a Bulk v2 DAP interface over USB with 1024-byte packets (high speed, 480 Mbit/s, on the CH32V307 and CH32V305; full speed, 12 Mbit/s, on the CH32V208), so Keil, pyOCD, probe-rs and OpenOCD use it as an ordinary CMSIS-DAP probe. A USB DFU bootloader in the flash keeps firmware updates to a USB cable.
 
-The firmware is built per board. `wdap` and `v305` are the probe boards, `wdap-144` and `v305-144` the same boards at the chip's rated 144 MHz, and `evt` the CH32V307 evaluation board:
+The firmware is built per board. `wdap`, `v305` and `linkw` are the probe boards, `wdap-144` and `v305-144` the same boards at the chip's rated 144 MHz, and `evt` the CH32V307 evaluation board:
 
 | Board | Chip, crystal | Target interface | Bootloader key |
 |---|---|---|---|
 | `wdap`: the "高速无线DAP调试器" board | CH32V307RCT6, 12 MHz | 2×6 header: TCK/SWCLK (pin 3), TMS/SWDIO (pin 4), RST (pin 5) | KEY2 |
 | `v305`: the CH32V305 board of this repository's earlier application (end of section 1) | CH32V305FBP6, 12 MHz | SWCLK PB13, SWDIO PA9, NRST PC8 | IAP key PC7 |
+| `linkw`: the WCH-LinkW-R0-1v1 (end of section 1) | CH32V208GBU6, 32 MHz | JP1: SWCLK (pin 2), SWDIO (pin 4), RST (pin 9) | ModeS key PA4 |
 | `evt`: CH32V307 evaluation board (the board of [CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template)) | CH32V307VCT6, 8 MHz | SWCLK PB13, SWDIO PB14, NRST PB12 | key on PB3 |
 
 ## 1. Getting started
@@ -18,7 +19,7 @@ Every release has one archive per board, `xrdap-ch32v3-<board>.zip`, with the im
 
 ### Wiring
 
-Connect the target's SWCLK, SWDIO and GND to the pins above; connect one probe per target. Pins 1 (3V3) and 7 (5V) of the `wdap` header are power outputs of the board; leave them unconnected when the target has its own supply.
+Connect the target's SWCLK, SWDIO and GND to the pins above; connect one probe per target. Pins 1 (3V3) and 7 (5V) of the `wdap` header and pins 8 (3V3) and 10 (5V) of JP1 on `linkw` are power outputs of the board; leave them unconnected when the target has its own supply. GND of `linkw` is pin 6 of JP1.
 
 ### First flashing
 
@@ -32,6 +33,8 @@ The bootloader slots of `v305` lie above 128 KB, where the WCH OpenOCD, which ch
 
 A board without a debug header (such as a `wdap` with the header unpopulated) can use the chip's built-in USB download mode instead: with BOOT0 pulled high at power-up the PC sees `4348:55E0`; write `boot-chain.bin` with WCHISPTool_CH32Vxxx, shipped with MounRiver Studio (chip CH32V307, USB download, read protection off), or with [wchisp](https://github.com/ch32-rs/wchisp) (`wchisp flash boot-chain.bin`).
 
+`linkw` uses the chip's own USB download mode: hold the BOOT key while plugging in USB, the PC sees `1a86:55E0`, and WCHISPTool_CH32Vxxx (chip CH32V208, download over USB, read protection off) writes `boot-chain.bin`. A board from the factory has read protection on and the tool refuses to write. Press "解除代码保护" (remove code protection) first: this erases the flash and takes the chip out of download mode, so hold BOOT and plug in once more before writing.
+
 A board with the earlier single bootloader (at address 0, application at `0x00010000`) needs no debugger: write `migrate-to-ab.elf.bin` with `dfu_update.py`; the old bootloader starts it as an application, it writes the boot chain and restarts, and the new bootloader stays in DFU mode. A power cut during this step leaves no working bootloader, and `boot-chain.bin` then has to be written in one of the two ways above. The settings area stays in place (for firmware before 0.6 see "Settings").
 
 A `v305` with the three-stage boot (USB `1209:3070`) migrates over DFU the same way, with the `migrate-to-ab.elf.bin` of `v305`:
@@ -42,7 +45,7 @@ python tools/dfu_update.py --bootloader 1209:3070 --run-app migrate-to-ab.elf.bi
 
 It writes slot B first and checks every page; meanwhile the old stage 1 and bootloader stay as they are, and a failure restarts into the old bootloader for another try. Stage 1 comes last, the page with its entry point last of all, so only a power cut during the few milliseconds of that page needs a WCH-Link to recover.
 
-With an empty application area the bootloader stays in DFU mode and the PC sees the USB device `1209:3072` (XR-DAP-V307 DFU, XR-DAP-V305 DFU on `v305`). Write the application as described in the next section.
+With an empty application area the bootloader stays in DFU mode and the PC sees the USB device `1209:3072` (XR-DAP-V307 DFU, XR-DAP-V305 DFU on `v305`, XR-DAP-V208 DFU on `linkw`). Write the application as described in the next section.
 
 ### Writing and updating the application
 
@@ -94,7 +97,26 @@ While the board still runs the earlier application (`0d28:2041`), which the tool
 
 The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); at 216 MHz the chip can run too hot, and restarts and similar problems can occur. `v305-144` is the same board at the rated 144 MHz, everything else is as on `v305`. The SWD timing is calibrated on this board with a cycle sweep; at 216 MHz the undelayed path is used only from requests of about 19 MHz.
 
-## 2. Wireless debugging (wdap)
+### WCH-LinkW board (linkw)
+
+`linkw` is the WCH-LinkW-R0-1v1 (CH32V208GBU6, 32 MHz crystal, WCH's wireless debugger), with the product name `XR-DAP-V208` (USB product string `XR-DAP-V208 CMSIS-DAP`, USB ids of the family). The application runs at the chip's rated 144 MHz and the bootloader at 96 MHz. The chip has no high-speed USB PHY, so the probe uses full-speed USB (12 Mbit/s); the DAP interface uses two single-direction endpoints, EP1 OUT and EP2 IN, and the packet size stays 1024 bytes.
+
+| Use | Pin |
+|---|---|
+| SWCLK | PA5, through 100 Ω to pin 2 of JP1 (PA14 is on the same net) |
+| SWDIO | PA11, through 100 Ω to pin 4 of JP1 (PA13 is on the same net) |
+| Target reset | PC8, directly to pin 9 of JP1 |
+| Blue LED, green LED | PC9, PC7, lit when low |
+| Bootloader key | ModeS, PA4, to ground when pressed |
+| Held low after power-up | PA0, PA1 (the switches of the 3V3 and 5V outputs on JP1) |
+
+The chip's debug pins PA13 and PA14 share their nets with the SWD lines of JP1. The application turns SWJ off at start so that they stay inputs while PA5 and PA11 drive the target; once the application runs, a WCH-Link cannot reach the chip. The BOOT key on the board is wired to BOOT0: held at power-up, it starts the chip's own USB download mode.
+
+The boot chain is the one of the other boards, with the two bootloader slots above the application window (see "Flash layout"). Holding ModeS while plugging in USB keeps the bootloader in DFU mode; the application and the bootloader are written and updated as on the other boards.
+
+The blue LED is the status light and follows the rule of the LED on `v305`. The green LED is lit while a debug session runs over the radio and blinks fast during pairing. The firmware is linked for 32 KB of RAM: the DAP packet count is 2 and the sampling ring buffer 2 KB (reported by vendor INFO).
+
+## 2. Wireless debugging (wdap, linkw)
 
 The SX1281 radio module on the `wdap` board joins two probes into one wireless probe: the host probe is plugged into the PC and the remote probe is wired to the target. The PC uses the host probe as an ordinary CMSIS-DAP probe; the host sends DAP commands over the radio to the remote, which executes them on its own SWD port and sends the answers back. Only two paired boards use the radio; a probe without a pairing does not use it at all, is a wired probe whatever its role setting, and executes no command from the radio.
 
@@ -104,7 +126,7 @@ That the probe is used over one link at a time (USB or the radio) is up to the u
 
 ### Pairing
 
-Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the control channel F (2448.5 MHz), with the default radio parameters (sync word `XRDP`), the boards exchange their chip UIDs and derive the CRC seed and GFSK sync word of the pair from the two UIDs. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
+Two boards work together once paired. Hold KEY2 on both boards for 3 s, one after the other within 10 s (or send control request `0x20`): on the control channel F (2448.5 MHz), with the default radio parameters (link address `XRDP`), the boards exchange their chip UIDs and derive the CRC seed and link address of the pair from the two UIDs. The pairing is kept in flash across power cycles and firmware updates; pairing the same two boards again gives the same parameters. The parameters separate pairs; they do not authenticate them.
 
 During pairing all probes use the default parameters and hear each other, so only one pair is paired at a time.
 
@@ -112,17 +134,17 @@ During pairing all probes use the default parameters and hear each other, so onl
 
 Pairing and setting up a session happen on F, the same for all probes. Once the host has found the remote it picks a data channel and both boards move there: at the first session it scans 2402–2481 MHz and takes the least busy point; when resends grow during a session it moves to the next good point, and the old point and the points less than 2 MHz from it are not used for 10 minutes. Control request `0x19` locks the data channel to one point, which then does not change. The rules are in XRDAP-Core `docs/protocol.md` 8.4.
 
-Several pairs of probes can work at the same time: they share F and tell their packets apart by the CRC seed (in GFSK also by the sync word). This is checked by host tests; it has not been tested on several pairs of probes.
+Several pairs of probes can work at the same time: they share F and tell their packets apart by the CRC seed and the link address (on `wdap` the link address at the high rate only). This is checked by host tests; it has not been tested on several pairs of probes.
 
 ### Settings
 
-Role, modulation, channel lock and pairing live in the settings area at the end of the application window (see Flash layout; LibXR's `DatabaseRawSequential`) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1 and 8.3), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the modulation of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired). Firmware before 0.6 keeps the settings in another format, so two boards updated from it are paired again.
+Role, rate, channel lock and pairing live in the settings area at the end of the application window (see Flash layout; LibXR's `DatabaseRawSequential`) and are read and changed with control port requests (XRDAP-Core `docs/protocol.md` 3.7.1 and 8.3), not DAP commands. Over USB they are EP0 vendor control transfers (`bmRequestType 0x41 / 0xC1`, request code 1 sends the request, 2 takes the answer), over the radio the `CONTROL` packet kind. Request `0x30` hands a control request over the radio to the peer, for example to change the rate of both boards from the host; without a pairing it and the temporary role override `0x10` answer status 4 (not paired). Firmware before 0.6 keeps the settings in another format, so two boards updated from it are paired again.
 
 - Role: automatic (the default), always wired, always host, always remote.
 - Channel: automatic (the default), or locked to one point.
-- Modulation (both boards must match):
-  - GFSK (the default): 2 Mb/s, packets of up to 255 bytes, at most 5 per 1024-byte message.
-  - FLRC: 1.3 Mb/s, packets of up to 127 bytes, 9 per message, without FEC (coding rate 1).
+- Rate (both boards must match), on `wdap`:
+  - High (the default), GFSK: 2 Mb/s, packets of up to 255 bytes, at most 5 per 1024-byte message.
+  - Low, FLRC: 1.3 Mb/s, packets of up to 127 bytes, 9 per message, without FEC (coding rate 1).
 
 ### Link
 
@@ -136,13 +158,21 @@ The radio driver is the xrobot-org/SX1281 Module, which has no thread of its own
 
 Over the radio the air rate sets the transfer speed: GFSK is faster than FLRC, and both are slower than the wire. Erasing and verifying (OpenOCD computes a CRC32) run on the target, so the radio adds little to them. The share of resent commands follows the 2.4 GHz interference around.
 
+### The radio of linkw
+
+`linkw` uses the chip's own 2.4 GHz radio. The driver is `platform/ch32v20x/v208_radio.hpp`, with register sequences from iSLER in [ch32fun](https://github.com/cnlohr/ch32fun) (MIT). Packets go over the air in the BLE packet format without a BLE connection; the access address, whitening and CRC are done by the hardware. The high rate, the default, is the 2M PHY: a packet holds up to 251 bytes, so a 1024-byte message takes at most 5 packets. The low rate is the 1M PHY: a packet holds up to 127 bytes, so a message takes up to 9. The link address of the pair is the access address at both rates. `linkw` and `wdap` cannot work together.
+
+The channels are those of BLE, 2402–2480 MHz, 2 MHz apart; a frequency between two of them goes to the nearer one, the same on both boards. The channel scan reads the instantaneous signal level in the baseband status; the value is not calibrated and only compares the points.
+
+The key to hold for pairing is ModeS.
+
 ### Watchdog and safe mode
 
 The application runs the independent watchdog and resets when its main loop has not run for about 8 s. After three watchdog resets in a row it starts in safe mode: the settings area is neither read nor written and the probe works as a wired probe, with DFU as usual; 30 s of normal running or a power cycle ends it.
 
 ## 3. Variable access and sampling (XR vendor extension)
 
-The probe supports the XR vendor extension (commands 0x80 to 0x85): reading and writing several addresses at once, following pointer chains, and sampling variables on the probe at a fixed period. The protocol is the one of [XRDAP-ESP](https://github.com/Jiu-xiao/XRDAP-ESP), and `xrdap read`, `write` and `watch` work as they are. The code comes from [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core) (the `xrdap-core` submodule), with the protocol in section 3 of its `docs/protocol.md`; the TIM7 tick is in `app/sampler_tick.cpp`, and the main loop does the sampling. With 64 KB of RAM on the CH32V307 the sampling buffer holds 4096 bytes (16384 on XRDAP-ESP); `xrdap info` reports it.
+The probe supports the XR vendor extension (commands 0x80 to 0x85): reading and writing several addresses at once, following pointer chains, and sampling variables on the probe at a fixed period. The protocol is the one of [XRDAP-ESP](https://github.com/Jiu-xiao/XRDAP-ESP), and `xrdap read`, `write` and `watch` work as they are. The code comes from [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core) (the `xrdap-core` submodule), with the protocol in section 3 of its `docs/protocol.md`; the TIM7 tick (TIM4 on `linkw`) is in `app/sampler_tick.cpp`, and the main loop does the sampling. With 64 KB of RAM on the CH32V307 the sampling buffer holds 4096 bytes (16384 on XRDAP-ESP); `xrdap info` reports it.
 
 Over the radio the vendor commands are forwarded to the remote like DAP commands; sampling runs on the remote at its own ticks, the frames collect in the remote's buffer and the host fetches them in batches.
 
@@ -150,7 +180,7 @@ The SWD clock is made in software on GPIO: a setting at or above the speed of th
 
 ## 4. Building
 
-CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144`, `v305` or `v305-144` selects the board:
+CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144`, `v305`, `v305-144` or `linkw` selects the board:
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -161,7 +191,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images. On a `v*` tag it also creates a draft release with one archive per board and `SHA256SUMS`.
+The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images. On a `v*` tag it also creates a draft release with one archive per board and `SHA256SUMS`.
 
 The flash layout, the bootloader slot rules, the target reset pin and the sampling tick are tested on the build machine, the last two against the stand-ins for the WCH headers in `tests/fake` (CI runs them too; the radio link's logic is tested in XRDAP-Core):
 
@@ -183,7 +213,7 @@ The firmware version is `XRDAP_VERSION` in `cmake/version.cmake`; the build adds
 | `0x00001000`–`0x0000DFFF` | bootloader slot A (52 KB, runs at 96 MHz; the last 256 bytes are the slot record) |
 | `0x0000E000`–`0x0001AFFF` | bootloader slot B (likewise) |
 | `0x0001B000`–`0x0003F6FF` | application (144 MHz on `evt` and `wdap-144`, 216 MHz on `wdap`) |
-| `0x0003F700`–`0x0003FEFF` | settings: role, modulation, channel lock, pairing; kept across firmware updates |
+| `0x0003F700`–`0x0003FEFF` | settings: role, rate, channel lock, pairing; kept across firmware updates |
 | `0x0003FF00`–`0x0003FFFF` | seal: application size and CRC32, written by the bootloader when a DFU download ends |
 
 The layout of `v305`:
@@ -199,7 +229,20 @@ The layout of `v305`:
 
 The CH32V305FB data sheet gives 224 KB of code flash, 128 KB of it zero-wait. The application sits in the zero-wait area, the bootloader slots above it; slot B ends at `0x3A000`, 8 KB beyond the 224 KB, and its slot record lies in that part. The earlier stage-3 bootloader ran at `0x20000` as well.
 
-A DFU download in the bootloader can only write up to the settings: an application image larger than `0x24700` bytes (`0x1D700` on `v305`) fails to download and the settings stay. The settings and the seal sit at the addresses of the earlier single-bootloader layout, so the migration leaves the settings area in place. The firmware is linked for 64 KB of RAM (32 KB on `v305`); on the CH32V307 the application window reaches beyond 192 KB, so with the user option FLASH 256K + RAM 64K the whole application runs from the zero-wait area, with FLASH 192K + RAM 128K the part beyond 192 KB runs slower; and the top 256 bytes of RAM hold the boot mailbox and the watchdog count (`common/reserved_ram.h`).
+The layout of `linkw`:
+
+| Address | Content |
+|---|---|
+| `0x00000000`–`0x00000FFF` | stage1 |
+| `0x00001000`–`0x0003F6FF` | application (144 MHz) |
+| `0x0003F700`–`0x0003FEFF` | settings area |
+| `0x0003FF00`–`0x0003FFFF` | seal |
+| `0x00040000`–`0x0004CFFF` | bootloader slot A |
+| `0x0004D000`–`0x00059FFF` | bootloader slot B |
+
+The CH32V208 has 480 KB of flash, and its start runs without wait states: 128, 144 or 160 KB by the user option word. The application sits in that area and the bootloader slots above it, where they run during a DFU only. The firmware is linked for 32 KB of RAM, which all three settings provide.
+
+A DFU download in the bootloader can only write up to the settings: an application image larger than `0x24700` bytes (`0x1D700` on `v305`, `0x3E700` on `linkw`) fails to download and the settings stay. The settings and the seal sit at the addresses of the earlier single-bootloader layout, so the migration leaves the settings area in place. The firmware is linked for 64 KB of RAM (32 KB on `v305` and `linkw`); on the CH32V307 the application window reaches beyond 192 KB, so with the user option FLASH 256K + RAM 64K the whole application runs from the zero-wait area, with FLASH 192K + RAM 128K the part beyond 192 KB runs slower; and the top 256 bytes of RAM hold the boot mailbox and the watchdog count (`common/reserved_ram.h`).
 
 The `wdap` application runs at 216 MHz from its 12 MHz crystal times 18, **above** the CH32V307's rated 144 MHz. It is done for the software SWD, whose speed follows the core clock; over the radio the air rate sets the speed at either clock. At 216 MHz the chip can run too hot, and restarts and similar problems can occur. `wdap-144` is the same board at the rated 144 MHz, everything else is as on `wdap`. The board files choose the clock (`XRDAP_APP_SYSCLK_HZ` in `boards/wdap.cmake` and `boards/wdap-144.cmake`, implemented in `common/sysclk.c`). The bootloader runs at 96 MHz.
 
@@ -212,8 +255,8 @@ The same bootloader code is linked once for each slot. The running bootloader wr
 ### When the bootloader stays in DFU mode
 
 - the bootloader key is held at power-up;
-- the boot mailbox at the top of RAM (`0x2000FFF0`, `0x20007FF0` on `v305`) holds a request, which survives a software reset (the application asks through it on DFU DETACH, the bootloader after it wrote the other slot);
-- the application area has no seal, the seal's CRC does not match, or the image is not linked for the application address (the second word of the vector table is not `0x0001B000`, `0x00002000` on `v305`).
+- the boot mailbox at the top of RAM (`0x2000FFF0`, `0x20007FF0` on `v305` and `linkw`) holds a request, which survives a software reset (the application asks through it on DFU DETACH, the bootloader after it wrote the other slot);
+- the application area has no seal, the seal's CRC does not match, or the image is not linked for the application address (the second word of the vector table is not `0x0001B000`, `0x00002000` on `v305`, `0x00001000` on `linkw`).
 
 ### Board files
 
@@ -221,8 +264,8 @@ The same bootloader code is linked once for each slot. The running bootloader wr
 
 ### libxr version
 
-The `libxr` submodule follows the `release/0.6-candidate` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data.
+The `libxr` submodule follows the `release/0.6-candidate` branch, which carries the fixes this project needs: the CH32 USBHS read a high-speed link as full speed at reset (Windows rejected the configuration descriptor); the DFU classes carried their own MS OS 2.0 descriptor, so Windows could not start a composite with the DAP interface; the USBHS sent a packet of a multi-packet IN transfer twice, which shifted DAP answers longer than 512 bytes; the DFU poll deadline and clearing an EP0 stall; and checking a posted AP write by reading RDBUFF, so that the clock stops only once the write is done and fast programming of a busy target loses no data; for the CH32V208, the port branches of the GPIO and PWM drivers on a chip without GPIOE, and USBFS EP0 OUT, where a control write longer than one packet stopped at its second packet.
 
 ## License
 
-Apache-2.0. The WCH files under `platform/` (the startup file, `Core` and `Peripheral`) keep their own licenses.
+Apache-2.0. The WCH files under `platform/` (the startup file, `Core` and `Peripheral`) keep their own licenses. `platform/ch32v20x/v208_radio.hpp` is derived from iSLER in ch32fun and also carries its MIT notice.

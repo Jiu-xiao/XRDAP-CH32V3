@@ -2,14 +2,15 @@
 
 [English](README.en.md)
 
-用 CH32V307 和 CH32V305 做的 CMSIS-DAP v2 调试探针，基于 [libxr](https://github.com/xrobot-org/libxr)。探针经 USB 高速（480 Mbit/s）接口提供 Bulk v2 DAP 接口，包长 1024 字节，Keil、pyOCD、probe-rs、OpenOCD 把它当普通的 CMSIS-DAP 探针。Flash 里有一个 USB DFU bootloader，固件升级只需一根 USB 线。
+用 CH32V307、CH32V305 和 CH32V208 做的 CMSIS-DAP v2 调试探针，基于 [libxr](https://github.com/xrobot-org/libxr)。探针经 USB 提供 Bulk v2 DAP 接口，包长 1024 字节（CH32V307、CH32V305 走高速 480 Mbit/s，CH32V208 走全速 12 Mbit/s），Keil、pyOCD、probe-rs、OpenOCD 把它当普通的 CMSIS-DAP 探针。Flash 里有一个 USB DFU bootloader，固件升级只需一根 USB 线。
 
-固件按板子编译。探针板是 `wdap` 和 `v305`，`wdap-144`、`v305-144` 是同样的板子跑在芯片标称的 144 MHz，`evt` 是 CH32V307 评估板：
+固件按板子编译。探针板是 `wdap`、`v305` 和 `linkw`，`wdap-144`、`v305-144` 是同样的板子跑在芯片标称的 144 MHz，`evt` 是 CH32V307 评估板：
 
 | 板子 | 芯片、晶振 | 目标接口 | bootloader 键 |
 |---|---|---|---|
 | `wdap`：“高速无线 DAP 调试器”板 | CH32V307RCT6，12 MHz | 2×6 排针：TCK/SWCLK（3 脚）、TMS/SWDIO（4 脚）、RST（5 脚） | KEY2 |
 | `v305`：CH32V305 板（本仓库早期应用的板子，见 1 节末尾） | CH32V305FBP6，12 MHz | SWCLK PB13，SWDIO PA9，NRST PC8 | IAP 键 PC7 |
+| `linkw`：WCH-LinkW-R0-1v1（见 1 节末尾） | CH32V208GBU6，32 MHz | JP1：SWCLK（2 脚）、SWDIO（4 脚）、RST（9 脚） | ModeS 键 PA4 |
 | `evt`：CH32V307 评估板（[CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template) 用的板子） | CH32V307VCT6，8 MHz | SWCLK PB13，SWDIO PB14，NRST PB12 | PB3 按键 |
 
 ## 1. 准备
@@ -18,7 +19,7 @@
 
 ### 接线
 
-目标的 SWCLK、SWDIO、GND 接到上表的引脚，一个目标只接一个探针。`wdap` 板排针的 1 脚（3V3）和 7 脚（5V）是板子的电源输出，目标自己有电源时不接。
+目标的 SWCLK、SWDIO、GND 接到上表的引脚，一个目标只接一个探针。`wdap` 板排针的 1 脚（3V3）和 7 脚（5V）、`linkw` 的 JP1 的 8 脚（3V3）和 10 脚（5V）是板子的电源输出，目标自己有电源时不接；`linkw` 的 GND 在 JP1 的 6 脚。
 
 ### 第一次烧录
 
@@ -32,6 +33,8 @@ openocd -f platform/wch-riscv.cfg -c init -c halt -c "flash erase_sector wch_ris
 
 没有调试口的板子（如未焊排针的 `wdap`）可以用芯片自带的 USB 下载模式：上电时拉高 BOOT0，电脑上出现 `4348:55E0`，用 MounRiver Studio 带的 WCHISPTool_CH32Vxxx（选芯片 CH32V307、下载方式 USB，不开读保护）或 [wchisp](https://github.com/ch32-rs/wchisp)（`wchisp flash boot-chain.bin`）写入 `boot-chain.bin`。
 
+`linkw` 用芯片自带的 USB 下载模式：按住 BOOT 键插上 USB，电脑上出现 `1a86:55E0`，用 WCHISPTool_CH32Vxxx（选芯片 CH32V208、下载方式 USB，不开读保护）写入 `boot-chain.bin`。出厂的板子开着读保护，工具拒绝写入；先点“解除代码保护”，这一步擦除 Flash 并让芯片离开下载模式，再按住 BOOT 重插一次就能写入。
+
 装着旧版单个 bootloader（地址 0，应用在 `0x00010000`）的板子不需要调试器：用 `dfu_update.py` 写入 `migrate-to-ab.elf.bin`，旧 bootloader 把它当作应用启动，它写入启动链后重启，新引导停在 DFU 模式。这一步期间断电会没有可用的引导，只能再用上面两种方式写入 `boot-chain.bin`。设置区留在原处（0.6 之前的固件见“设置”）。
 
 装着三段式启动（USB `1209:3070`）的 `v305` 同样经 DFU 迁移，用 `v305` 的 `migrate-to-ab.elf.bin`：
@@ -42,7 +45,7 @@ python tools/dfu_update.py --bootloader 1209:3070 --run-app migrate-to-ab.elf.bi
 
 它先写槽 B 并逐页校验，这期间旧的 stage1 和 bootloader 不变，失败时重启回旧 bootloader，可以再来一次；最后写 stage1，入口所在的一页最后改，只有这一页写入的几毫秒内断电需要 WCH-Link 恢复。
 
-应用区为空时引导停在 DFU 模式，电脑上出现 USB 设备 `1209:3072`（XR-DAP-V307 DFU，`v305` 为 XR-DAP-V305 DFU），然后按下一节写入应用。
+应用区为空时引导停在 DFU 模式，电脑上出现 USB 设备 `1209:3072`（XR-DAP-V307 DFU，`v305` 为 XR-DAP-V305 DFU，`linkw` 为 XR-DAP-V208 DFU），然后按下一节写入应用。
 
 ### 写入、升级应用
 
@@ -94,7 +97,26 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="3072", MODE="0666"
 
 指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下芯片温度过高，可能出现重启等问题。`v305-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `v305` 相同。SWD 时序在本板上按周期数扫描标定；216 MHz 下不加延时路径只在请求不低于约 19 MHz 时使用。
 
-## 2. 无线调试（wdap）
+### WCH-LinkW 板（linkw）
+
+`linkw` 是 WCH-LinkW-R0-1v1（CH32V208GBU6、32 MHz 晶振，WCH 的无线调试器），产品名 `XR-DAP-V208`（USB 产品字符串 `XR-DAP-V208 CMSIS-DAP`，USB 标识与全系列相同）。应用跑在芯片标称的 144 MHz，bootloader 跑在 96 MHz。芯片没有高速 USB PHY，探针走全速 USB（12 Mbit/s）；DAP 接口用 EP1 OUT 和 EP2 IN 两个单向端点，包长仍是 1024 字节。
+
+| 用途 | 引脚 |
+|---|---|
+| SWCLK | PA5，经 100 Ω 到 JP1 的 2 脚（同一网络上还有 PA14） |
+| SWDIO | PA11，经 100 Ω 到 JP1 的 4 脚（同一网络上还有 PA13） |
+| 目标复位 | PC8，直连 JP1 的 9 脚 |
+| 蓝灯、绿灯 | PC9、PC7，低电平点亮 |
+| bootloader 键 | ModeS，PA4，按下接地 |
+| 上电后保持低电平 | PA0、PA1（JP1 上 3V3、5V 输出的开关） |
+
+芯片的调试口 PA13、PA14 和 JP1 的 SWD 线是同一网络，应用启动时关掉 SWJ 让它们保持输入，由 PA5、PA11 驱动目标；应用运行后 WCH-Link 连不上芯片。板上的 BOOT 键接 BOOT0，上电时按住进芯片自带的 USB 下载模式。
+
+启动链与其他板子相同，两个引导槽在应用窗口之上（见“Flash 布局”）。按住 ModeS 插上 USB 时 bootloader 停在 DFU 模式；写入、升级应用和引导的方法与其他板子相同。
+
+蓝灯是状态灯，规则与 `v305` 的指示灯相同。绿灯在调试会话走无线时亮，配对进行中快闪。固件按 32 KB RAM 链接：DAP 包数为 2，采样环形缓冲区 2 KB（厂商 INFO 报告）。
+
+## 2. 无线调试（wdap、linkw）
 
 `wdap` 板上的 SX1281 射频模块可以把两块探针连成一套无线探针：主机端插在电脑上，远端接目标。电脑把主机端当普通 CMSIS-DAP 探针使用，主机端把 DAP 命令经无线发给远端，远端在自己的 SWD 口上执行后把应答发回。只有配对过的两块板之间走无线；没有配对的探针不用射频，无论角色设置如何都是有线探针，也不执行无线收到的任何命令。
 
@@ -104,7 +126,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="3072", MODE="0666"
 
 ### 配对
 
-两块板配对后才能一起用。在 10 s 内先后把两块板上的 KEY2 按住 3 s（或发控制口请求 `0x20`），两块板在控制信道 F（2448.5 MHz）上用默认无线参数（同步字 `XRDP`）交换芯片 UID，由两个 UID 算出这一对的 CRC 种子和 GFSK 同步字。配对结果存在 flash 里，断电和固件升级后保留；同两块板重新配对得到相同的参数。这些参数只区分不同的对，不做认证。
+两块板配对后才能一起用。在 10 s 内先后把两块板上的 KEY2 按住 3 s（或发控制口请求 `0x20`），两块板在控制信道 F（2448.5 MHz）上用默认无线参数（链路地址 `XRDP`）交换芯片 UID，由两个 UID 算出这一对的 CRC 种子和链路地址。配对结果存在 flash 里，断电和固件升级后保留；同两块板重新配对得到相同的参数。这些参数只区分不同的对，不做认证。
 
 配对时所有探针都用默认参数，彼此听得到，所以同一时间只配对一对。
 
@@ -112,17 +134,17 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="3072", MODE="0666"
 
 配对和建立会话都在 F 上，所有探针相同。主机端找到远端后选一个数据信道，两块板一起换过去：第一次建立会话时扫描 2402–2481 MHz，选最不忙的点；会话中重发变多时换到下一个好的点，原来的点和离它不到 2 MHz 的点 10 分钟内不再使用。控制口请求 `0x19` 可以把数据信道锁定在一个点上，锁定后不换。规则见 XRDAP-Core 的 `docs/protocol.md` 8.4。
 
-几对探针可以同时工作：它们共用 F，靠 CRC 种子（GFSK 还靠同步字）区分彼此的包。这一点由主机测试检查，还没有在多对探针上实测。
+几对探针可以同时工作：它们共用 F，靠 CRC 种子和链路地址（`wdap` 的链路地址只用在高速率）区分彼此的包。这一点由主机测试检查，还没有在多对探针上实测。
 
 ### 设置
 
-角色、调制方式、信道锁定和配对结果存在应用窗口末尾的设置区（见 Flash 布局，LibXR 的 `DatabaseRawSequential`），用控制口的请求查看和修改（XRDAP-Core 的 `docs/protocol.md` 3.7.1 和 8.3），不是 DAP 命令。USB 上走 EP0 厂商控制传输（`bmRequestType 0x41 / 0xC1`，请求码 1 发请求、2 取应答），射频上是 `CONTROL` 包。请求 `0x30` 把一个控制请求经无线交给对端执行，例如在主机端上同时改两块板的调制方式；没有配对时它和临时改角色的 `0x10` 回状态 4（未配对）。从 0.6 之前的固件升级上来时设置区的格式不同，两块板要重新配对。
+角色、速率、信道锁定和配对结果存在应用窗口末尾的设置区（见 Flash 布局，LibXR 的 `DatabaseRawSequential`），用控制口的请求查看和修改（XRDAP-Core 的 `docs/protocol.md` 3.7.1 和 8.3），不是 DAP 命令。USB 上走 EP0 厂商控制传输（`bmRequestType 0x41 / 0xC1`，请求码 1 发请求、2 取应答），射频上是 `CONTROL` 包。请求 `0x30` 把一个控制请求经无线交给对端执行，例如在主机端上同时改两块板的速率；没有配对时它和临时改角色的 `0x10` 回状态 4（未配对）。从 0.6 之前的固件升级上来时设置区的格式不同，两块板要重新配对。
 
 - 角色：自动（默认）、总是有线、总是主机端、总是远端。
 - 信道：自动（默认），或锁定在一个点上。
-- 调制方式（两块板必须相同）：
-  - GFSK（默认）：2 Mb/s，每包最长 255 字节，一条 1024 字节的消息最多 5 包。
-  - FLRC：1.3 Mb/s，每包最长 127 字节，一条消息分成 9 包，不纠错（编码率 1）。
+- 速率（两块板必须相同），`wdap` 上：
+  - 高（默认），GFSK：2 Mb/s，每包最长 255 字节，一条 1024 字节的消息最多 5 包。
+  - 低，FLRC：1.3 Mb/s，每包最长 127 字节，一条消息分成 9 包，不纠错（编码率 1）。
 
 ### 链路
 
@@ -136,13 +158,21 @@ SX1281 的连续接收在信道拥挤时可能卡死（数据手册勘误 16.1�
 
 无线时传输速度由空中速率决定：GFSK 比 FLRC 快，两者都比有线慢。擦除和校验（OpenOCD 计算 CRC32）在目标上运行，无线增加的时间不多。重发比例随周围 2.4 GHz 干扰变化。
 
+### linkw 的射频
+
+`linkw` 用芯片自带的 2.4 GHz 射频，驱动是 `platform/ch32v20x/v208_radio.hpp`，寄存器序列来自 [ch32fun](https://github.com/cnlohr/ch32fun) 的 iSLER（MIT）。包按 BLE 的包格式上空中，不建立 BLE 连接，访问地址、白化和 CRC 由硬件完成。高速率（默认）是 2M PHY，每包至多 251 字节，一条 1024 字节的消息最多 5 包；低速率是 1M PHY，每包至多 127 字节，一条消息最多 9 包。两档速率都以这一对的链路地址作访问地址。`linkw` 和 `wdap` 之间不能互通。
+
+信道用 BLE 的信道，2402–2480 MHz，间隔 2 MHz，落在两个信道之间的频率取较近的一个，两块板结果相同。信道扫描读基带状态里的瞬时信号强度，这个值没有定标，只用来比较各个点。
+
+配对时按住的键是 ModeS。
+
 ### 看门狗与安全模式
 
 应用开启独立看门狗，主循环约 8 s 没有运行即复位。连续三次看门狗复位后应用以安全模式启动：不读写设置区，只作为有线探针工作，DFU 照常可用；正常运行 30 s 或重新上电后恢复。
 
 ## 3. 变量读写与采样（XR 厂商扩展）
 
-探针支持 XR 厂商扩展（命令 0x80 到 0x85）：一次读写多个地址、沿指针链解引用，以及在探针上按固定周期采样变量。协议与 [XRDAP-ESP](https://github.com/Jiu-xiao/XRDAP-ESP) 相同，`xrdap` 的 `read`、`write`、`watch` 直接可用。代码来自 [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)（`xrdap-core` 子模块），协议见其 `docs/protocol.md` 第 3 节；TIM7 节拍在 `app/sampler_tick.cpp`，采样在主循环里做。CH32V307 只有 64 KB RAM，采样缓冲为 4096 字节（XRDAP-ESP 为 16384 字节），`xrdap info` 会报告。
+探针支持 XR 厂商扩展（命令 0x80 到 0x85）：一次读写多个地址、沿指针链解引用，以及在探针上按固定周期采样变量。协议与 [XRDAP-ESP](https://github.com/Jiu-xiao/XRDAP-ESP) 相同，`xrdap` 的 `read`、`write`、`watch` 直接可用。代码来自 [XRDAP-Core](https://github.com/Jiu-xiao/XRDAP-Core)（`xrdap-core` 子模块），协议见其 `docs/protocol.md` 第 3 节；TIM7（`linkw` 为 TIM4）节拍在 `app/sampler_tick.cpp`，采样在主循环里做。CH32V307 只有 64 KB RAM，采样缓冲为 4096 字节（XRDAP-ESP 为 16384 字节），`xrdap info` 会报告。
 
 无线调试时厂商命令和 DAP 命令一样转发给远端，采样在远端按自己的节拍进行，帧攒在远端的缓冲里，由主机端成批取回。
 
@@ -150,7 +180,7 @@ SWD 由 GPIO 软件产生：设定值不低于不加延时路径的速度（`wda
 
 ## 4. 自己编译
 
-需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144`、`v305` 或 `v305-144` 选板子：
+需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144`、`v305`、`v305-144` 或 `linkw` 选板子：
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
@@ -161,7 +191,7 @@ cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
 cmake --build build/app-evt
 ```
 
-启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。打 `v*` 标签时还建一个 release 草稿，带每块板一个压缩包和 `SHA256SUMS`。
+启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。打 `v*` 标签时还建一个 release 草稿，带每块板一个压缩包和 `SHA256SUMS`。
 
 Flash 布局、引导槽规则、目标复位脚和采样节拍在编译机上测试，后两项用 `tests/fake` 里的替身代替 WCH 头文件（CI 也运行；无线链路的逻辑在 XRDAP-Core 里测试）：
 
@@ -183,7 +213,7 @@ ctest --test-dir build/tests
 | `0x00001000`–`0x0000DFFF` | 引导槽 A（52 KB，运行在 96 MHz；最后 256 字节为槽记录） |
 | `0x0000E000`–`0x0001AFFF` | 引导槽 B（同上） |
 | `0x0001B000`–`0x0003F6FF` | 应用（`evt`、`wdap-144` 运行在 144 MHz，`wdap` 运行在 216 MHz） |
-| `0x0003F700`–`0x0003FEFF` | 设置区：角色、调制方式、信道锁定、配对，固件升级时保留 |
+| `0x0003F700`–`0x0003FEFF` | 设置区：角色、速率、信道锁定、配对，固件升级时保留 |
 | `0x0003FF00`–`0x0003FFFF` | seal：应用大小和 CRC32，由 bootloader 在 DFU 下载结束时写入 |
 
 `v305` 的布局：
@@ -199,7 +229,20 @@ ctest --test-dir build/tests
 
 CH32V305FB 的数据手册写的是 224 KB 代码 flash，其中 128 KB 零等待。应用在零等待区，引导槽在它之上；槽 B 到 `0x3A000` 结束，超出 224 KB 8 KB，槽记录就在超出的部分里。早期的 stage3 bootloader 也运行在 `0x20000`。
 
-引导的 DFU 下载只能写到设置区之前：超过 `0x24700` 字节（`v305` 为 `0x1D700`）的应用镜像下载失败，设置区不受影响。设置区和 seal 的地址与旧版单个 bootloader 的布局相同，迁移不动设置区。固件按 64 KB RAM 链接（`v305` 为 32 KB）；CH32V307 上应用区延伸到 192 KB 以上，用户选择字为 FLASH 256K + RAM 64K 时整个应用都在零等待区，FLASH 192K + RAM 128K 时超出 192 KB 的部分运行较慢。RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
+`linkw` 的布局：
+
+| 地址 | 内容 |
+|---|---|
+| `0x00000000`–`0x00000FFF` | stage1 |
+| `0x00001000`–`0x0003F6FF` | 应用（144 MHz） |
+| `0x0003F700`–`0x0003FEFF` | 设置区 |
+| `0x0003FF00`–`0x0003FFFF` | seal |
+| `0x00040000`–`0x0004CFFF` | 引导槽 A |
+| `0x0004D000`–`0x00059FFF` | 引导槽 B |
+
+CH32V208 的 Flash 共 480 KB，开头的零等待区按用户选择字是 128、144 或 160 KB。应用放在零等待区，引导槽在它之上，只在 DFU 时运行。固件按 32 KB RAM 链接，三种选择字都满足。
+
+引导的 DFU 下载只能写到设置区之前：超过 `0x24700` 字节（`v305` 为 `0x1D700`，`linkw` 为 `0x3E700`）的应用镜像下载失败，设置区不受影响。设置区和 seal 的地址与旧版单个 bootloader 的布局相同，迁移不动设置区。固件按 64 KB RAM 链接（`v305`、`linkw` 为 32 KB）；CH32V307 上应用区延伸到 192 KB 以上，用户选择字为 FLASH 256K + RAM 64K 时整个应用都在零等待区，FLASH 192K + RAM 128K 时超出 192 KB 的部分运行较慢。RAM 顶部 256 字节留给启动信箱和看门狗计数（`common/reserved_ram.h`）。
 
 `wdap` 的应用用 12 MHz 晶振 18 倍频跑在 216 MHz，**超出** CH32V307 标称的 144 MHz。这样做是为了软件 SWD：速度与主频成正比；无线时两种主频下都由空中速率决定。216 MHz 下芯片温度过高，可能出现重启等问题。`wdap-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `wdap` 相同。时钟由板级文件选择（`boards/wdap.cmake`、`boards/wdap-144.cmake` 的 `XRDAP_APP_SYSCLK_HZ`，实现在 `common/sysclk.c`）；bootloader 运行在 96 MHz。
 
@@ -212,8 +255,8 @@ CH32V305FB 的数据手册写的是 224 KB 代码 flash，其中 128 KB 零等�
 ### 引导何时停在 DFU 模式
 
 - 上电时按住 bootloader 键；
-- RAM 顶部的启动信箱（`0x2000FFF0`，`v305` 为 `0x20007FF0`）里有进入 DFU 的请求，软件复位后保留（应用收到 DFU DETACH、引导写完另一个槽后都经它请求）；
-- 应用区没有 seal、seal 的 CRC 不符，或镜像不是按应用地址链接的（向量表第二个字不等于 `0x0001B000`，`v305` 为 `0x00002000`）。
+- RAM 顶部的启动信箱（`0x2000FFF0`，`v305`、`linkw` 为 `0x20007FF0`）里有进入 DFU 的请求，软件复位后保留（应用收到 DFU DETACH、引导写完另一个槽后都经它请求）；
+- 应用区没有 seal、seal 的 CRC 不符，或镜像不是按应用地址链接的（向量表第二个字不等于 `0x0001B000`，`v305` 为 `0x00002000`，`linkw` 为 `0x00001000`）。
 
 ### 板子文件
 
@@ -221,8 +264,8 @@ CH32V305FB 的数据手册写的是 224 KB 代码 flash，其中 128 KB 零等�
 
 ### libxr 版本
 
-`libxr` 子模块跟随 `release/0.6-candidate` 分支，本项目用到的修正都在这个分支上：CH32 USBHS 在复位时把高速连接读成全速（Windows 判定配置描述符无效）；DFU 类自带一份 MS OS 2.0 描述符，与 DAP 组成复合设备时 Windows 无法启动；USBHS 在多包 IN 传输中把已发出的包再发一遍，超过 512 字节的 DAP 应答因此错位；DFU 轮询期限和 EP0 解除 STALL；检查已投递的 AP 写时读 RDBUFF，等写入完成再停时钟，目标忙时高速烧写不丢数据。
+`libxr` 子模块跟随 `release/0.6-candidate` 分支，本项目用到的修正都在这个分支上：CH32 USBHS 在复位时把高速连接读成全速（Windows 判定配置描述符无效）；DFU 类自带一份 MS OS 2.0 描述符，与 DAP 组成复合设备时 Windows 无法启动；USBHS 在多包 IN 传输中把已发出的包再发一遍，超过 512 字节的 DAP 应答因此错位；DFU 轮询期限和 EP0 解除 STALL；检查已投递的 AP 写时读 RDBUFF，等写入完成再停时钟，目标忙时高速烧写不丢数据；CH32V208 用到的：没有 GPIOE 的芯片上 GPIO、PWM 驱动的端口分支，以及 USBFS EP0 OUT，超过一包的控制写入停在第二包。
 
 ## 许可证
 
-Apache-2.0。`platform/` 下 WCH 的文件（启动文件、`Core`、`Peripheral`）保留各自的许可证。
+Apache-2.0。`platform/` 下 WCH 的文件（启动文件、`Core`、`Peripheral`）保留各自的许可证。`platform/ch32v20x/v208_radio.hpp` 派生自 ch32fun 的 iSLER，同时带它的 MIT 声明。
