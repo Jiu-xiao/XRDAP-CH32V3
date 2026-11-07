@@ -11,11 +11,29 @@
 #include <cstdint>
 #include <map>
 
+// 主机上没有 WCH 的中断属性 / The host has no WCH interrupt attribute.
+#define interrupt(name) used
+
 typedef enum
 {
   DISABLE = 0,
   ENABLE = !DISABLE
 } FunctionalState;
+
+typedef enum
+{
+  RESET = 0,
+  SET = !RESET
+} ITStatus;
+
+struct TIM_TypeDef
+{
+  uint16_t CTLR1;
+  uint16_t SWEVGR;
+  uint16_t CNT;
+  uint16_t PSC;
+  uint16_t ATRLR;
+};
 
 struct GPIO_TypeDef;
 
@@ -28,11 +46,19 @@ struct GPIO_TypeDef;
 #define RCC_APB2Periph_GPIOB 0x08U
 #define RCC_APB2Periph_GPIOC 0x10U
 #define RCC_APB2Periph_GPIOD 0x20U
+#define RCC_APB1Periph_TIM7 0x20U
+
+#define TIM_URS 0x0004U
+#define TIM_IT_Update 0x0001U
+#define TIM_PSCReloadMode_Immediate 0x0001U
+#define TIM7_IRQn 56
 
 namespace Fake
 {
 inline uint32_t apb2_clocks = 0U;
 inline std::map<const GPIO_TypeDef*, uint16_t> output;
+inline TIM_TypeDef tim7;
+inline bool tim7_update_pending = false;
 
 inline uint32_t PortClock(const GPIO_TypeDef* port)
 {
@@ -46,6 +72,25 @@ inline void Reset()
   output.clear();
 }
 }  // namespace Fake
+
+#define TIM7 (&Fake::tim7)
+
+inline uint32_t SystemCoreClock = 8000000U;
+
+inline void RCC_APB1PeriphClockCmd(uint32_t, FunctionalState) {}
+inline void TIM_Cmd(TIM_TypeDef*, FunctionalState) {}
+inline void TIM_ITConfig(TIM_TypeDef*, uint16_t, FunctionalState) {}
+inline void NVIC_EnableIRQ(int) {}
+
+inline ITStatus TIM_GetITStatus(TIM_TypeDef*, uint16_t)
+{
+  return Fake::tim7_update_pending ? SET : RESET;
+}
+
+inline void TIM_ClearITPendingBit(TIM_TypeDef*, uint16_t)
+{
+  Fake::tim7_update_pending = false;
+}
 
 inline void RCC_APB2PeriphClockCmd(uint32_t periph, FunctionalState state)
 {

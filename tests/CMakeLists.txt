@@ -19,8 +19,9 @@ target_compile_definitions(xrdap_tests PRIVATE XRDAP_APP_BASE=0x0001B000
                            XRDAP_BL_RECORD_SIZE=256)
 target_compile_options(xrdap_tests PRIVATE -Wall -Wextra)
 
-# tests/fake stands in for the WCH headers and LibXR's GPIO driver.
-add_executable(xrdap_app_tests app_test.cpp)
+# tests/fake stands in for the WCH headers, LibXR's GPIO driver and XRDAP-Core's vendor
+# extension.
+add_executable(xrdap_app_tests app_test.cpp "${XRDAP_ROOT}/app/sampler_tick.cpp")
 target_include_directories(xrdap_app_tests PRIVATE fake "${XRDAP_ROOT}/common"
                            "${XRDAP_ROOT}/app")
 target_compile_options(xrdap_app_tests PRIVATE -Wall -Wextra)

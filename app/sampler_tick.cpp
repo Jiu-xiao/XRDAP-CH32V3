@@ -11,14 +11,11 @@ namespace
 
 constexpr uint32_t kMaxCounterUs = 65535U;
 
-// TIM6/TIM7 run from PCLK1, doubled when APB1 is divided (RM, clock tree).
-uint32_t Tim7ClockHz()
-{
-  RCC_ClocksTypeDef clocks;
-  RCC_GetClocksFreq(&clocks);
-  const bool divided = (RCC->CFGR0 & RCC_PPRE1) != RCC_PPRE1_DIV1;
-  return clocks.PCLK1_Frequency * (divided ? 2U : 1U);
-}
+// TIM7 的时钟是 PCLK1，APB1 分频时翻倍（RM 时钟树）。HCLK 等于内核时钟，APB1 不分频
+// 或二分频（common/sysclk.c），所以它等于内核时钟。 / TIM7 runs from PCLK1, doubled when
+// APB1 is divided (RM, clock tree). HCLK is the core clock and APB1 is undivided or
+// divided by 2 (common/sysclk.c), so TIM7 runs at the core clock.
+uint32_t Tim7ClockHz() { return SystemCoreClock; }
 
 }  // namespace
 
