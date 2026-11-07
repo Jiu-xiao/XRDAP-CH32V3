@@ -13,8 +13,8 @@ namespace XrDap
 namespace
 {
 
-// SWD 位操作时序，CPU 周期 x10（LibXR SwdGpioTiming），每板测定 / SWD bit-bang timing in
-// CPU cycles x10 (LibXR SwdGpioTiming), measured per board.
+// SWD 位操作时序，CPU 周期 x10（LibXR SwdGpioTiming），每板标定 / SWD bit-bang timing in
+// CPU cycles x10 (LibXR SwdGpioTiming), calibrated per board.
 constexpr LibXR::Debug::SwdGpioTiming kSwdTiming{
     Board::kSwdStepX10, Board::kSwdInterceptX10, Board::kSwdFastX10};
 // 没有部件有事时主循环最长等多久。 / Longest wait of the main loop when no part has

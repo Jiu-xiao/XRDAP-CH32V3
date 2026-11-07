@@ -16,7 +16,7 @@
 // bootloader is still in place when the slot does not overlap it (CH32V305). A power cut
 // while the CH32V305's stage 1 page is written, or while the CH32V307's slot A (over the
 // old bootloader) is written, leaves no working bootloader: the chip's own USB loader
-// (BOOT0, CH32V307) or a WCH-Link then writes boot-chain.hex.
+// (BOOT0, CH32V307) or a WCH-Link then writes boot-chain.bin.
 //
 // 从应用区写启动链。
 // migrate-to-ab：链接在旧 bootloader 的应用区（XRDAP_MIGRATE_BASE：CH32V307 为 0x10000，
@@ -29,7 +29,7 @@
 // 保留。某页校验失败时同样擦掉 seal 并重启：槽不与旧 bootloader 重叠时（CH32V305）
 // 旧 bootloader 仍然可用。写 CH32V305 的 stage1 页时，或写 CH32V307 的槽 A（覆盖旧
 // bootloader）时断电，就没有可用的引导，只能用芯片自带的 USB 下载（BOOT0，CH32V307）
-// 或 WCH-Link 写 boot-chain.hex。
+// 或 WCH-Link 写 boot-chain.bin。
 
 #include <stdint.h>
 #include <string.h>

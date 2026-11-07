@@ -58,12 +58,9 @@ inline constexpr BoardPin kRadioTxEn{kPortB, 11};
 inline constexpr BoardPin kRadioRxEn{kPortB, 12};
 
 /// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10）：由 216 MHz 下测得的半
-/// 周期（约 60 ns + 每圈 14.6 ns，无延时路径约 14 MHz）换算；在 STM32H723 目标上验证：
-/// 无延时路径 13.45 MHz、N=1 为 7.05 MHz，各 300 轮 16 KiB 无错 / SWD bit-bang timing
-/// (b, a, c of LibXR SwdGpioTiming, cycles x10), from the half period measured at
-/// 216 MHz (about 60 ns + 14.6 ns per loop, undelayed path about 14 MHz); checked on an
-/// STM32H723 target: undelayed 13.45 MHz, N=1 7.05 MHz, 300 rounds of 16 KiB each without
-/// an error.
+/// 周期换算，无延时路径约 14 MHz / SWD bit-bang timing (b, a, c of LibXR SwdGpioTiming,
+/// cycles x10), from the half period measured at 216 MHz; the undelayed path runs at
+/// about 14 MHz.
 inline constexpr uint32_t kSwdStepX10 = 63;
 inline constexpr uint32_t kSwdInterceptX10 = 259;
 inline constexpr uint32_t kSwdFastX10 = 154;

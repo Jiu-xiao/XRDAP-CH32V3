@@ -11,10 +11,11 @@ set(XRDAP_APP_SYSCLK_HZ 216000000)
 # Boot chain (bootloader/): stage 1 at 0, the application window 0x2000..0x20000 in the
 # 128 KB zero-wait flash (settings at 0x1F700, seal at 0x1FF00, as with the earlier
 # three-stage bootloader), and the two bootloader slots above it, at
-# 0x20000 and 0x2D000. The CH32V305FB data sheet gives 128 KB; the flash goes on above it
-# (the earlier stage-3 bootloader ran at 0x20000). The first installation and the migration
-# write slot B, which leaves the earlier bootloader at 0x20000 in place until stage 1 is
-# written. The boot key is the IAP key (PC7). The boot request mailbox keeps the magics of
+# 0x20000 and 0x2D000. The CH32V305FB data sheet gives 224 KB of code flash, 128 KB of it
+# zero-wait (CH32V307DS0 p.4, table 2-1-1); the end of slot B, with its record at 0x39F00,
+# lies beyond the 224 KB. The earlier stage-3 bootloader ran at 0x20000 as well. The first
+# installation and the migration write slot B, which leaves the earlier bootloader at
+# 0x20000 in place until stage 1 is written. The boot key is the IAP key (PC7). The boot request mailbox keeps the magics of
 # the earlier bootloader, "LBBX" "CV30", so an application of either layout reaches DFU
 # with either bootloader.
 set(XRDAP_APP_BASE 0x00002000)

@@ -268,7 +268,7 @@ def update_bootloader(directory, serial, force):
     usb.util.dispose_resources(dev)
     if slot not in ("a", "b"):
         raise RuntimeError("this bootloader cannot replace itself (it predates the A/B boot "
-                           "chain): write boot-chain.hex with the chip's USB loader (BOOT0) "
+                           "chain): write boot-chain.bin with the chip's USB loader (BOOT0) "
                            "or a WCH-Link first")
     path = None
     for candidate in (f"bootloader-{slot}.elf.bin", f"bootloader-{slot}.bin"):

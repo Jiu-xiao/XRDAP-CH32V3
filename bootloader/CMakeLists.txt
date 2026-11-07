@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP boot chain (evt, wdap, v305): stage 1 at 0 and the USB DFU bootloader, linked once
+# XR-DAP boot chain (evt, wdap, wdap-144, v305, v305-144): stage 1 at 0 and the USB DFU bootloader, linked once
 # for each bootloader slot (common/boot_slots.hpp). Bare-metal LibXR (no RTOS), runs at
 # 96 MHz. With Python 3 it also builds boot-chain.bin/.hex (stage 1 + the board's first
 # slot with its record, tools/boot_chain.py) for the first installation and the
@@ -51,8 +51,8 @@ add_custom_command(TARGET stage1.elf POST_BUILD
   COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:stage1.elf> ${PROJECT_BINARY_DIR}/stage1.bin
   VERBATIM)
 
-# The bootloader, once per slot. 96 MHz: LibXR CH32Flash needs SYSCLK <= 120 MHz
-# (common/sysclk.h). Each image ends before its slot's record.
+# The bootloader, once per slot, at 96 MHz (common/sysclk.h). Each image ends before its
+# slot's record.
 math(EXPR _bl_image_size "${XRDAP_BL_SLOT_SIZE} - ${XRDAP_BL_RECORD_SIZE}" OUTPUT_FORMAT HEXADECIMAL)
 foreach(_slot a b)
   if(_slot STREQUAL "a")

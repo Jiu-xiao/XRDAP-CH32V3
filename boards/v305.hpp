@@ -62,17 +62,14 @@ inline constexpr BoardPin kNreset{kPortC, 8};
 inline constexpr BoardPin kPowerEnable3v3{kPortA, 5};
 inline constexpr BoardPin kPowerEnable5v{kPortB, 12};
 
-/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10），在本板
-/// 216 MHz 下用 SysTick 周期计数扫描测得（F302CB 目标）：每个延时次数 N 每周期
-/// 6.0 个周期（N >= 16 精确），N = 1..32 拟合 a = 25..27、b = 6.3..6.4，即 wdap 的
-/// {63, 259}；不加延时路径每周期 11.45（写）、12.74（读）、14.13（SWJ 序列）个周期，
-/// c 取最快的写路径，不加延时路径只在不比请求快时才用 / SWD bit-bang timing (b, a, c of
-/// LibXR SwdGpioTiming, cycles x10), measured on this board at 216 MHz with a SysTick
-/// cycle sweep (F302CB target): 6.0 cycles per SWCLK for each delay step N
-/// (exact for N >= 16), fit over N = 1..32 a = 25..27, b = 6.3..6.4, i.e. wdap's {63,
-/// 259}; the undelayed path costs 11.45 (write), 12.74 (read) and 14.13 (SWJ sequence)
-/// cycles per SWCLK, and c is the fastest, the write path, so the undelayed path is used
-/// only where it is not faster than requested.
+/// SWD 位翻转时序（LibXR SwdGpioTiming 的 b、a、c，周期数 x10），在本板 216 MHz 下用
+/// SysTick 周期计数扫描延时次数 N 标定：拟合出的 a、b 与 wdap 相同；不加延时路径的读、写
+/// 和 SWJ 序列每个 SWCLK 用的周期数不同，c 取最快的写路径，不加延时路径只在不比请求快时
+/// 才用 / SWD bit-bang timing (b, a, c of LibXR SwdGpioTiming, cycles x10), calibrated on
+/// this board at 216 MHz with a SysTick cycle sweep over the delay count N: the fit gives
+/// the a and b of wdap. On the undelayed path writes, reads and SWJ sequences take
+/// different cycle counts per SWCLK; c is the fastest, the write path, so the undelayed
+/// path is used only where it is not faster than requested.
 inline constexpr uint32_t kSwdStepX10 = 63;
 inline constexpr uint32_t kSwdInterceptX10 = 259;
 inline constexpr uint32_t kSwdFastX10 = 114;
