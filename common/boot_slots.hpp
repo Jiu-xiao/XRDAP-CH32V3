@@ -13,8 +13,8 @@
 // 引导槽。stage1（bootloader/stage1.S）位于地址 0，永不更新；它启动 A、B 两个引导槽之一，
 // 每个槽最后 XRDAP_BL_RECORD_SIZE 字节是槽记录。记录有效（RecordValid）的槽才算数；两个都
 // 有效时 stage1 启动序号大的那个，上电时按住 boot 键则启动另一个（SelectSlot）。运行中的
-// 引导只写另一个槽，并最后写槽记录，所以中途停下的更新不会影响正在用的槽。stage1 用汇编实现
-// RecordValid 和 SelectSlot，两者必须一致。
+// 引导只写另一个槽，并最后写槽记录，所以中途停下的更新不会影响正在用的槽。stage1
+// 用汇编实现 RecordValid 和 SelectSlot，两者必须一致。
 
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +28,7 @@ inline constexpr uint32_t kRecordSize = XRDAP_BL_RECORD_SIZE;
 inline constexpr uint32_t kRecordOffset = kSlotSize - kRecordSize;
 inline constexpr uint32_t kImageLimit = kRecordOffset;
 
-inline constexpr uint32_t kSealMagic = 0x4C414553U;  // "SEAL", LibXR's DFU seal record
+inline constexpr uint32_t kSealMagic = 0x4C414553U;    // "SEAL", LibXR's DFU seal record
 inline constexpr uint32_t kRecordMagic = 0x534C4258U;  // "XBLS"
 // Words a slot cannot start with: blank or erased flash (the CH32V30x flash reads
 // 0xE339E339 when erased).

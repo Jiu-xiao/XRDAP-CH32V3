@@ -39,8 +39,8 @@
 #include "xrdap/activity/dap_activity.hpp"
 #include "xrdap/control/usb_control.hpp"
 #include "xrdap/session/executor.hpp"
-#include "xrdap/vendor/reset_counting_usb.hpp"
 #include "xrdap/vendor/dap_vendor.hpp"
+#include "xrdap/vendor/reset_counting_usb.hpp"
 
 namespace XrDap
 {

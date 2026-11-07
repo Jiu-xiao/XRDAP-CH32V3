@@ -1,34 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Writes the boot chain from the application window.
 //
-// migrate-to-ab: linked in the application window of the old bootloader (XRDAP_MIGRATE_BASE:
-// 0x10000 on the CH32V307, 0x2000 on the CH32V305), so the old bootloader takes it over
-// DFU as an application and starts it. rewrite-boot-chain: the same program at the
-// application address of the A/B layout, for a board that already runs it (repair and
-// bring-up). It carries boot-chain-parts.bin (tools/boot_chain.py): stage 1's sector and
-// the board's first bootloader slot with its record (slot A on the CH32V307, slot B on the
-// CH32V305). It writes the slot first, page by page with a read-back check, then stage 1's
-// sector from its last page to its first, so that the entry page changes last; then it
-// erases its own seal record, so that no bootloader starts it again, and restarts. Stage 1
-// starts the new bootloader, which stays in DFU mode until an application is written. The
-// settings at the end of the application window stay. If a page does not verify it erases
-// its seal and restarts as well: the old bootloader is still in place when the slot does
-// not overlap it (CH32V305). A power cut while the CH32V305's stage 1 page is written, or
-// while the CH32V307's slot A (over the old bootloader) is written, leaves no working
-// bootloader: the chip's own USB loader (BOOT0, CH32V307) or a WCH-Link then writes
-// boot-chain.hex.
+// migrate-to-ab: linked in the application window of the old bootloader
+// (XRDAP_MIGRATE_BASE: 0x10000 on the CH32V307, 0x2000 on the CH32V305), so the old
+// bootloader takes it over DFU as an application and starts it. rewrite-boot-chain: the
+// same program at the application address of the A/B layout, for a board that already
+// runs it (repair and bring-up). It carries boot-chain-parts.bin (tools/boot_chain.py):
+// stage 1's sector and the board's first bootloader slot with its record (slot A on the
+// CH32V307, slot B on the CH32V305). It writes the slot first, page by page with a
+// read-back check, then stage 1's sector from its last page to its first, so that the
+// entry page changes last; then it erases its own seal record, so that no bootloader
+// starts it again, and restarts. Stage 1 starts the new bootloader, which stays in DFU
+// mode until an application is written. The settings at the end of the application window
+// stay. If a page does not verify it erases its seal and restarts as well: the old
+// bootloader is still in place when the slot does not overlap it (CH32V305). A power cut
+// while the CH32V305's stage 1 page is written, or while the CH32V307's slot A (over the
+// old bootloader) is written, leaves no working bootloader: the chip's own USB loader
+// (BOOT0, CH32V307) or a WCH-Link then writes boot-chain.hex.
 //
 // 从应用区写启动链。
 // migrate-to-ab：链接在旧 bootloader 的应用区（XRDAP_MIGRATE_BASE：CH32V307 为 0x10000，
-// CH32V305 为 0x2000），旧 bootloader 把它当应用经 DFU 写入并启动。rewrite-boot-chain：同一个
-// 程序链接在 A/B 布局的应用地址，给已经用这套布局的板子（修复和调试）。它带着
-// boot-chain-parts.bin（tools/boot_chain.py）：stage1 所在扇区和板子的首个引导槽及其槽记录
-// （CH32V307 为槽 A，CH32V305 为槽 B）。先写槽，逐页回读校验；再从后往前写 stage1 扇区，入口
-// 页最后改；然后擦掉自己的 seal 记录，免得引导再次启动它，再重启。stage1 启动新引导，新引导
-// 停在 DFU 等待应用。应用区末尾的设置保留。某页校验失败时同样擦掉 seal 并重启：槽不与旧
-// bootloader 重叠时（CH32V305）旧 bootloader 仍然可用。写 CH32V305 的 stage1 页时，或写
-// CH32V307 的槽 A（覆盖旧 bootloader）时断电，就没有可用的引导，只能用芯片自带的 USB 下载
-// （BOOT0，CH32V307）或 WCH-Link 写 boot-chain.hex。
+// CH32V305 为 0x2000），旧 bootloader 把它当应用经 DFU 写入并启动。
+// rewrite-boot-chain：同一个程序链接在 A/B 布局的应用地址，给已经用这套布局的板子
+// （修复和调试）。它带着 boot-chain-parts.bin（tools/boot_chain.py）：stage1 所在扇区
+// 和板子的首个引导槽及其槽记录（CH32V307 为槽 A，CH32V305 为槽 B）。先写槽，逐页回读
+// 校验；再从后往前写 stage1 扇区，入口页最后改；然后擦掉自己的 seal 记录，免得引导
+// 再次启动它，再重启。stage1 启动新引导，新引导停在 DFU 等待应用。应用区末尾的设置
+// 保留。某页校验失败时同样擦掉 seal 并重启：槽不与旧 bootloader 重叠时（CH32V305）
+// 旧 bootloader 仍然可用。写 CH32V305 的 stage1 页时，或写 CH32V307 的槽 A（覆盖旧
+// bootloader）时断电，就没有可用的引导，只能用芯片自带的 USB 下载（BOOT0，CH32V307）
+// 或 WCH-Link 写 boot-chain.hex。
 
 #include <stdint.h>
 #include <string.h>

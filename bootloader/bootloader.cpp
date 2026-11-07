@@ -16,26 +16,27 @@
 // stage1 从两个引导槽之一启动它（common/boot_slots.hpp）；同一份代码为每个槽各链接一次
 // （XRDAP_BL_SLOT）。每次复位时决定启动应用还是停留在 DFU 模式。应用经启动信箱请求
 // （DFU DETACH）、上电时按住板上的 bootloader 键，或应用区没有有效的带 seal 镜像时停留。
-// DFU 模式下在 USBHS 上提供两个 USB DFU 接口（可用 dfu-util，Windows 上自动使用 WinUSB）：
-// 接口 0 写应用，下载完成后写入 seal 记录并启动新镜像；接口 1 把引导镜像写进另一个槽，用序号
-// 比自己大 1 的槽记录收尾，然后重启并停在 DFU，由 stage1 启动新的引导。
+// DFU 模式下在 USBHS 上提供两个 USB DFU 接口（可用 dfu-util，Windows 上自动使用
+// WinUSB）：接口 0 写应用，下载完成后写入 seal 记录并启动新镜像；接口 1 把引导镜像
+// 写进另一个槽，用序号比自己大 1 的槽记录收尾，然后重启并停在 DFU，由 stage1 启动新的
+// 引导。
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 
 #include XRDAP_BOARD_HEADER
+#include "boot_slots.hpp"
 #include "ch32_flash.hpp"
 #include "ch32_timebase.hpp"
 #include "ch32_usb_dev.hpp"
 #include "ch32v30x.h"
+#include "chip_uid.hpp"
 #include "dfu/dfu_bootloader.hpp"
-#include "boot_slots.hpp"
 #include "flash_layout.hpp"
 #include "libxr.hpp"
 #include "reserved_ram.h"
 #include "thread.hpp"
-#include "chip_uid.hpp"
 #include "xrdap/probe/probe_identity.hpp"
 
 namespace
@@ -70,8 +71,10 @@ constexpr bool Disjoint(uint32_t a, uint32_t a_size, uint32_t b, uint32_t b_size
   return a + a_size <= b || b + b_size <= a;
 }
 static_assert(Disjoint(0U, XRDAP_STAGE1_SIZE, kAppBase, kAppSize) &&
-                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[0], Slots::kSlotSize) &&
-                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[1], Slots::kSlotSize) &&
+                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[0],
+                           Slots::kSlotSize) &&
+                  Disjoint(0U, XRDAP_STAGE1_SIZE, Slots::kSlotBase[1],
+                           Slots::kSlotSize) &&
                   Disjoint(kAppBase, kAppSize, Slots::kSlotBase[0], Slots::kSlotSize) &&
                   Disjoint(kAppBase, kAppSize, Slots::kSlotBase[1], Slots::kSlotSize) &&
                   Disjoint(Slots::kSlotBase[0], Slots::kSlotSize, Slots::kSlotBase[1],
@@ -82,7 +85,8 @@ static_assert(Disjoint(0U, XRDAP_STAGE1_SIZE, kAppBase, kAppSize) &&
 // window (CH32V307) or slot B above it (CH32V305).
 constexpr uint32_t Max(uint32_t a, uint32_t b) { return a > b ? a : b; }
 constexpr uint32_t kFlashEnd =
-    Max(kAppBase + kAppSize, Max(Slots::kSlotBase[0], Slots::kSlotBase[1]) + Slots::kSlotSize);
+    Max(kAppBase + kAppSize,
+        Max(Slots::kSlotBase[0], Slots::kSlotBase[1]) + Slots::kSlotSize);
 constexpr LibXR::FlashRegion kFlashRegions[] = {
     {kFlashBase, kPageSize, kFlashEnd / kPageSize}};
 
@@ -274,7 +278,8 @@ static_assert(sizeof(Slots::kVersionTag) == 13U, "the literal above starts with 
 
 alignas(64) uint8_t ep0_buffer[64];
 
-// The same VID:PID on every board (tools/dfu_update.py); the product string names the chip.
+// The same VID:PID on every board (tools/dfu_update.py); the product string names the
+// chip.
 constexpr uint16_t kUsbVid = 0x1209;
 constexpr uint16_t kUsbPid = 0x3072;
 

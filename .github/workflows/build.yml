@@ -6,6 +6,15 @@ on:
   workflow_dispatch:
 
 jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format 21.1.8 (libxr configuration), without the WCH SDK in platform/
+        run: |
+          pip install clang-format==21.1.8
+          git ls-files '*.hpp' '*.cpp' '*.h' '*.c' ':!:platform/*' | xargs clang-format --dry-run --Werror
+
   build:
     runs-on: ubuntu-latest
     # WCH GCC 15.2 (riscv32-wch-elf-*) and CMake, from xrobot-org/Docker-Image, pinned by
@@ -29,12 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - name: PC tests of the pure logic
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev
           cmake -S tests -B build/tests
           cmake --build build/tests
           ctest --test-dir build/tests --output-on-failure
