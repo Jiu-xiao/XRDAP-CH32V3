@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// Identity of this probe: product (per board, boards/<name>.hpp), firmware version and
-// chip UID. The serial rule, the
-// DAP_Info strings, the chip UID and the family USB ids come from XRDAP-Core
-// (xrdap/probe): prefix + the 12-byte UID in upper-case hex, the same string the USB
-// stack builds for the device serial.
+// Identity of this probe: product (per board, boards/<name>/board.hpp), firmware version
+// and chip UID. The serial rule, the DAP_Info strings, the chip UID and the family USB
+// ids come from XRDAP-Core (xrdap/probe): prefix + the 12-byte UID in upper-case hex, the
+// same string the USB stack builds for the device serial.
 //
-// 本探针的身份：产品名（按板子，boards/<名字>.hpp）、固件版本和芯片 UID。序列号规则、
-// DAP_Info 字符串、芯片 UID 和全系列的 USB 标识来自 XRDAP-Core（xrdap/probe）：前缀 +
-// 12 字节 UID 的大写十六进制，与 USB 协议栈生成的设备序列号相同。
+// 本探针的身份：产品名（按板子，boards/<名字>/board.hpp）、固件版本和芯片 UID。
+// 序列号规则、DAP_Info 字符串、芯片 UID 和全系列的 USB 标识来自 XRDAP-Core
+// （xrdap/probe）：前缀 + 12 字节 UID 的大写十六进制，
+// 与 USB 协议栈生成的设备序列号相同。
 
 #include <cstdint>
 #include <string_view>

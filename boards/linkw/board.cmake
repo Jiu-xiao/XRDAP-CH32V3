@@ -26,6 +26,5 @@ set(XRDAP_C_HEAP_SIZE 0x3000)
 set(XRDAP_DAP_PACKET_COUNT 2)
 set(XRDAP_RING_BYTES 2048)
 set(XRDAP_HAS_LED ON)
-# The board's composition (boards/linkw.cpp) and its parts.
-set(XRDAP_BOARD_APP linkw)
+# Sources of the parts that board.cpp puts together with the common probe.
 set(XRDAP_BOARD_SOURCES app/status_led.cpp app/settings_store.cpp)

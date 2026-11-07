@@ -1,13 +1,15 @@
-# Shared CH32 build setup for the bootloader and the application projects: toolchain, CPU
-# flags, board selection, the WCH peripheral library and the image helpers. Each project
-# includes this file before project().
+# Shared CH32 build setup for the application (CMakeLists.txt) and the boot chain
+# (bootloader/CMakeLists.txt): toolchain, board and chip selection, defaults, flash layout,
+# version, compiler flags, the WCH SDK library and the image helper. Each project includes
+# this file before project().
 #
-# Board: -DXRDAP_BOARD=<name> selects boards/<name>.cmake (HSE crystal, core clock, the
-# bootloader's LED (XRDAP_HAS_LED), the memory of its chip, and
-# the application's composition XRDAP_BOARD_APP with its parts XRDAP_BOARD_SOURCES),
-# boards/<name>.hpp (pins used by the firmware) and boards/<XRDAP_BOARD_APP>.cpp.
-# Chip family: XRDAP_CHIP_FAMILY in the board's cmake selects cmake/family-<name>.cmake
-# (SDK directory, startup file, compiler flags); the default is ch32v30x.
+# Board: XRDAP_BOARD names a directory in boards/: board.cmake (crystal, core clock, chip
+# family, memory, flash layout, boot key, the bootloader's LED (XRDAP_HAS_LED) and the
+# board's sources XRDAP_BOARD_SOURCES), board.hpp (pins and timing used by the firmware) and
+# board.cpp (the application's composition). The presets in CMakePresets.json name the
+# firmwares built from them; wdap-144 and v305-144 set XRDAP_APP_SYSCLK_HZ to 144 MHz.
+# Chip family: XRDAP_CHIP_FAMILY in board.cmake selects chips/<family>/ (WCH SDK, startup
+# file, and chip.cmake with the compiler flags); the default is ch32v30x.
 
 if(NOT DEFINED XRDAP_ROOT)
   get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -31,19 +33,22 @@ set(CMAKE_OBJCOPY ${COMPILER_PREFIX}objcopy)
 set(CMAKE_SIZE ${COMPILER_PREFIX}size)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-set(XRDAP_BOARD "" CACHE STRING "Board configuration in boards/")
-set_property(CACHE XRDAP_BOARD PROPERTY STRINGS wdap wdap-144 v305 v305-144 linkw)
+# Board: a preset (cmake --preset wdap; cmake --list-presets) or -DXRDAP_BOARD=<directory>.
+set(XRDAP_BOARD "" CACHE STRING "Board directory in boards/")
+set_property(CACHE XRDAP_BOARD PROPERTY STRINGS wdap v305 linkw)
 if(NOT XRDAP_BOARD)
-  message(FATAL_ERROR "No board: -DXRDAP_BOARD=wdap|wdap-144|v305|v305-144|linkw")
+  message(FATAL_ERROR "No board: cmake --preset <name> (cmake --list-presets), or -DXRDAP_BOARD=wdap|v305|linkw")
 endif()
-if(NOT EXISTS "${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+set(XRDAP_BOARD_DIR "${XRDAP_ROOT}/boards/${XRDAP_BOARD}")
+if(NOT EXISTS "${XRDAP_BOARD_DIR}/board.cmake")
   message(FATAL_ERROR "Unknown XRDAP_BOARD '${XRDAP_BOARD}'")
 endif()
-include("${XRDAP_ROOT}/boards/${XRDAP_BOARD}.cmake")
+include("${XRDAP_BOARD_DIR}/board.cmake")
 if(NOT DEFINED XRDAP_CHIP_FAMILY)
   set(XRDAP_CHIP_FAMILY ch32v30x)
 endif()
-include("${XRDAP_ROOT}/cmake/family-${XRDAP_CHIP_FAMILY}.cmake")
+set(XRDAP_CHIP_DIR "${XRDAP_ROOT}/chips/${XRDAP_CHIP_FAMILY}")
+include("${XRDAP_CHIP_DIR}/chip.cmake")
 # Application core clock (common/sysclk.h); the bootloader runs at 96 MHz.
 if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
   set(XRDAP_APP_SYSCLK_HZ 144000000)
@@ -169,36 +174,38 @@ set(XRDAP_COMMON_DEFINES
     XRDAP_BL_SLOT_SIZE=${XRDAP_BL_SLOT_SIZE}
     XRDAP_BL_RECORD_SIZE=${XRDAP_BL_RECORD_SIZE}
     XRDAP_RAM_SIZE=${XRDAP_RAM_SIZE}
-    XRDAP_BOARD_HEADER="${XRDAP_BOARD}.hpp")
+    XRDAP_BOARD_HEADER="board.hpp")
 if(XRDAP_HAS_LED)
   list(APPEND XRDAP_COMMON_DEFINES XRDAP_HAS_LED)
 endif()
 list(APPEND XRDAP_COMMON_DEFINES XRDAP_BOOT_REQUEST_MAGIC0=${XRDAP_BOOT_REQUEST_MAGIC0}u
      XRDAP_BOOT_REQUEST_MAGIC1=${XRDAP_BOOT_REQUEST_MAGIC1}u)
 
-set(XRDAP_PLATFORM_INCLUDES
-    "${XRDAP_PLATFORM_DIR}"
-    "${XRDAP_PLATFORM_DIR}/Core"
-    "${XRDAP_PLATFORM_DIR}/Peripheral/inc"
-    "${XRDAP_ROOT}/boards"
+# Include directories of every target: the chip family's SDK, the board, common/.
+set(XRDAP_INCLUDES
+    "${XRDAP_CHIP_DIR}"
+    "${XRDAP_CHIP_DIR}/Core"
+    "${XRDAP_CHIP_DIR}/Peripheral/inc"
+    "${XRDAP_BOARD_DIR}"
     "${XRDAP_ROOT}/common")
 
-# WCH core files and peripheral library, built once per project.
-macro(xrdap_add_platform_library)
-  file(GLOB _peripheral_sources "${XRDAP_PLATFORM_DIR}/Peripheral/src/*.c")
-  file(GLOB _core_sources "${XRDAP_PLATFORM_DIR}/Core/*.c")
-  add_library(platform OBJECT ${_peripheral_sources} ${_core_sources}
-              "${XRDAP_PLATFORM_DIR}/${XRDAP_STARTUP_FILE}"
-              "${XRDAP_ROOT}/platform/syscalls.c")
-  target_include_directories(platform PUBLIC ${XRDAP_PLATFORM_INCLUDES})
-  target_compile_definitions(platform PUBLIC ${XRDAP_COMMON_DEFINES})
+# The chip family's WCH SDK (core files, peripheral library, startup file) and the newlib
+# stubs, built once per project.
+macro(xrdap_add_chip_library)
+  file(GLOB _peripheral_sources "${XRDAP_CHIP_DIR}/Peripheral/src/*.c")
+  file(GLOB _core_sources "${XRDAP_CHIP_DIR}/Core/*.c")
+  add_library(chip OBJECT ${_peripheral_sources} ${_core_sources}
+              "${XRDAP_CHIP_DIR}/${XRDAP_STARTUP_FILE}"
+              "${XRDAP_ROOT}/common/syscalls.c")
+  target_include_directories(chip PUBLIC ${XRDAP_INCLUDES})
+  target_compile_definitions(chip PUBLIC ${XRDAP_COMMON_DEFINES})
 endmacro()
 
 # Links `target` into the flash window [base, base + size) with a C heap of
 # heap_size bytes (operator new on bare metal, newlib malloc) and emits .hex/.bin.
 function(xrdap_add_image target base size heap_size)
   target_link_options(${target} PRIVATE
-    -T "${XRDAP_ROOT}/platform/Link.ld"
+    -T "${XRDAP_ROOT}/chips/Link.ld"
     -Wl,--defsym=IMAGE_FLASH_BASE=${base}
     -Wl,--defsym=IMAGE_FLASH_LENGTH=${size}
     -Wl,--defsym=HEAP_SIZE=${heap_size}
@@ -215,3 +222,36 @@ function(xrdap_add_image target base size heap_size)
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${target}>
     VERBATIM)
 endfunction()
+
+# Firmware version shared by the application and the bootloader: XRDAP_VERSION plus the
+# commit it was built from, e.g. 0.6.0+g9c0860c (".dirty" for uncommitted changes). A
+# build from a copy without .git passes the commit with -DXRDAP_GIT_REV=<short hash>[.dirty].
+# The application reports it in DAP_Info, the bootloader in its USB strings and slot record.
+set(XRDAP_VERSION 0.6.0)
+if(NOT DEFINED XRDAP_GIT_REV)
+  execute_process(COMMAND git rev-parse --short=7 HEAD
+                  WORKING_DIRECTORY "${XRDAP_ROOT}"
+                  OUTPUT_VARIABLE XRDAP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET RESULT_VARIABLE _git_result)
+  if(_git_result EQUAL 0)
+    execute_process(COMMAND git status --porcelain --untracked-files=no
+                    WORKING_DIRECTORY "${XRDAP_ROOT}"
+                    OUTPUT_VARIABLE _git_dirty OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if(_git_dirty)
+      string(APPEND XRDAP_GIT_REV ".dirty")
+    endif()
+  else()
+    set(XRDAP_GIT_REV "")
+  endif()
+endif()
+set(XRDAP_FIRMWARE_VERSION "${XRDAP_VERSION}")
+if(XRDAP_GIT_REV)
+  string(APPEND XRDAP_FIRMWARE_VERSION "+g${XRDAP_GIT_REV}")
+endif()
+# Version in BCD for the USB bcdDevice field: 0.6.0 -> 0x0060.
+string(REPLACE "." ";" _version_parts "${XRDAP_VERSION}")
+list(GET _version_parts 0 _major)
+list(GET _version_parts 1 _minor)
+list(GET _version_parts 2 _patch)
+math(EXPR XRDAP_VERSION_BCD "(${_major} << 8) | (${_minor} << 4) | ${_patch}" OUTPUT_FORMAT HEXADECIMAL)

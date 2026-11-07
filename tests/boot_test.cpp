@@ -2,11 +2,11 @@
 // Tests of the boot layout on the build machine: the flash layout shared by the
 // bootloader and the application (common/flash_layout.hpp) and stage 1's slot rules
 // (common/boot_slots.hpp; bootloader/stage1.S implements the same). The expected values
-// come from those headers and cmake/ch32v3.cmake.
+// come from those headers and cmake/xrdap.cmake.
 //
 // 在编译机上测试启动布局：bootloader 和应用共用的 Flash 布局
 // （common/flash_layout.hpp）和 stage 1 的槽规则（common/boot_slots.hpp；
-// bootloader/stage1.S 实现同样的规则）。判据来自这两个头文件和 cmake/ch32v3.cmake。
+// bootloader/stage1.S 实现同样的规则）。判据来自这两个头文件和 cmake/xrdap.cmake。
 
 #include <cstdio>
 #include <cstring>

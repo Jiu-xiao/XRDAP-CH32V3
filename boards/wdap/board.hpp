@@ -29,8 +29,8 @@ inline constexpr uint16_t kUsbBcd = 0x0300;
 inline constexpr BoardPin kBootKey{kPortC, 10};
 
 /// LED2..LED9：8 颗 WS2812B-2020 串成一链，DIN 接 PB15，即 SPI2 的
-/// MOSI（app/ws2812.hpp）/ LED2..LED9: a chain of 8 WS2812B-2020, DIN on PB15, SPI2's
-/// MOSI (app/ws2812.hpp).
+/// MOSI（ws2812.hpp）/ LED2..LED9: a chain of 8 WS2812B-2020, DIN on PB15, SPI2's
+/// MOSI (ws2812.hpp).
 inline constexpr uint8_t kStatusLightCount = 8;
 inline constexpr BoardPin kStatusLights{kPortB, 15};
 /// SPI2 的 SCK 和 MISO，SPI 驱动一并配置 / SPI2's SCK and MISO, configured by the SPI

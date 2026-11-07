@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// A part of a board that the probe's main loop serves (boards/<name>.cpp lists them):
-// it may do work every round of the loop and answer control port requests.
+// A part of a board that the probe's main loop serves (boards/<name>/board.cpp lists
+// them): it may do work every round of the loop and answer control port requests.
 //
-// 板子上由探针主循环服务的部件（boards/<name>.cpp 列出）：
+// 板子上由探针主循环服务的部件（boards/<name>/board.cpp 列出）：
 // 每轮主循环可以做事，也可以应答控制口请求。
 
 #include <cstdint>

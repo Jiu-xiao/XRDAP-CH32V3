@@ -10,12 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: clang-format 21.1.8 (libxr configuration), without the WCH SDK in platform/
+      - name: clang-format 21.1.8 (libxr configuration), without the WCH SDK in chips/
         run: |
           pip install clang-format==21.1.8
           git ls-files '*.hpp' '*.cpp' '*.h' '*.c' \
-            ':!:platform/Core/*' ':!:platform/Peripheral/*' \
-            ':!:platform/ch32v20x/Core/*' ':!:platform/ch32v20x/Peripheral/*' \
+            ':!:chips/*/Core/*' ':!:chips/*/Peripheral/*' \
             | xargs clang-format --dry-run --Werror
 
   build:
@@ -28,10 +27,10 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Build bootloaders and applications (wdap, wdap-144, v305, v305-144, linkw)
+      - name: Build the boot chain and the application of every preset in CMakePresets.json
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          tools/build.sh wdap wdap-144 v305 v305-144 linkw
+          tools/build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: xrdap-ch32v3-${{ github.sha }}

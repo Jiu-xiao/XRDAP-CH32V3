@@ -6,8 +6,10 @@ set(XRDAP_HSE_HZ 12000000)
 # sysclk.h). The flash has no wait states to set (code runs from the zero-wait area),
 # flash writes halve HCLK (LibXR CH32Flash), and the USBHS PLL runs from the
 # crystal. At 216 MHz the chip can run too hot, and restarts and similar problems can
-# occur; boards/v305-144.cmake is the same board at the rated clock.
-set(XRDAP_APP_SYSCLK_HZ 216000000)
+# occur; the preset v305-144 builds the same board at the rated clock.
+if(NOT DEFINED XRDAP_APP_SYSCLK_HZ)
+  set(XRDAP_APP_SYSCLK_HZ 216000000)
+endif()
 # Boot chain (bootloader/): stage 1 at 0, the application window 0x2000..0x20000 in the
 # 128 KB zero-wait flash (settings at 0x1F700, seal at 0x1FF00, as with the earlier
 # three-stage bootloader), and the two bootloader slots above it, at
@@ -42,6 +44,5 @@ set(XRDAP_C_HEAP_SIZE 0x2000)
 set(XRDAP_DAP_PACKET_COUNT 2)
 set(XRDAP_RING_BYTES 2048)
 set(XRDAP_HAS_LED ON)
-# The board's composition (boards/v305.cpp) and its parts.
-set(XRDAP_BOARD_APP v305)
+# Sources of the parts that board.cpp puts together with the common probe.
 set(XRDAP_BOARD_SOURCES app/status_led.cpp)

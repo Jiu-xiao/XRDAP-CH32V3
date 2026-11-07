@@ -1,19 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP boot chain (wdap, wdap-144, v305, v305-144, linkw): stage 1 at 0 and the USB DFU bootloader, linked once
+# XR-DAP boot chain of the board XRDAP_BOARD (boards/): stage 1 at 0 and the USB DFU bootloader, linked once
 # for each bootloader slot (common/boot_slots.hpp). Bare-metal LibXR (no RTOS), runs at
 # 96 MHz. With Python 3 it also builds boot-chain.bin/.hex (stage 1 + the board's first
 # slot with its record, tools/boot_chain.py) for the first installation and the
 # migration image.
 get_filename_component(XRDAP_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-include("${XRDAP_ROOT}/cmake/ch32v3.cmake")
-include("${XRDAP_ROOT}/cmake/version.cmake")
+include("${XRDAP_ROOT}/cmake/xrdap.cmake")
 
 project(xrdap_ch32v3_bootloader C CXX ASM)
 xrdap_setup_flags(Os)
 xrdap_setup_libraries()
 
-# The boot key stage 1 reads (board cmake: XRDAP_BOOT_KEY_PORT A..D, XRDAP_BOOT_KEY_PIN).
+# The boot key stage 1 reads (board.cmake: XRDAP_BOOT_KEY_PORT A..D, XRDAP_BOOT_KEY_PIN).
 set(_gpio_A 0x40010800)
 set(_gpio_B 0x40010C00)
 set(_gpio_C 0x40011000)
@@ -28,13 +27,13 @@ endif()
 set(XRDAP_BOOT_KEY_DEFINES XRDAP_BOOT_KEY_GPIO=${_gpio_${XRDAP_BOOT_KEY_PORT}}
     XRDAP_BOOT_KEY_PIN=${XRDAP_BOOT_KEY_PIN} XRDAP_BOOT_KEY_RCC_BIT=${_rcc_${XRDAP_BOOT_KEY_PORT}})
 
-xrdap_add_platform_library()
+xrdap_add_chip_library()
 
 set(LIBXR_SYSTEM None)
 set(LIBXR_DRIVER ch)
 set(LIBXR_CH32_CONFIG_FILE ${XRDAP_CHIP_CONFIG_FILE})
 add_subdirectory("${XRDAP_ROOT}/libxr" libxr)
-target_include_directories(xr PUBLIC ${XRDAP_PLATFORM_INCLUDES})
+target_include_directories(xr PUBLIC ${XRDAP_INCLUDES})
 target_compile_definitions(xr PUBLIC ${XRDAP_COMMON_DEFINES})
 
 # Stage 1: assembly only, linked by itself at 0.
@@ -71,7 +70,7 @@ foreach(_slot a b)
   # Family names (vendor, serial prefix) from XRDAP-Core, header only; the chip UID is this
   # repository's common/chip_uid.hpp.
   target_include_directories(${_target} PRIVATE "${XRDAP_ROOT}/xrdap-core" "${XRDAP_ROOT}/common")
-  target_link_libraries(${_target} PRIVATE platform xr)
+  target_link_libraries(${_target} PRIVATE chip xr)
   # LibXR allocates the DFU and USB buffers from the heap at start-up.
   xrdap_add_image(${_target} ${_base} ${_bl_image_size} ${XRDAP_BL_HEAP_SIZE})
 endforeach()
@@ -107,7 +106,7 @@ if(Python3_FOUND)
   set_source_files_properties(migrate_payload.S PROPERTIES OBJECT_DEPENDS
                               ${PROJECT_BINARY_DIR}/boot-chain-parts.bin)
   target_compile_definitions(migrate-to-ab.elf PRIVATE ${_migrate_defines})
-  target_link_libraries(migrate-to-ab.elf PRIVATE platform)
+  target_link_libraries(migrate-to-ab.elf PRIVATE chip)
   add_dependencies(migrate-to-ab.elf boot_chain)
   xrdap_add_image(migrate-to-ab.elf ${XRDAP_MIGRATE_BASE} ${XRDAP_MIGRATE_SIZE} 0x400)
 
@@ -116,7 +115,7 @@ if(Python3_FOUND)
   # and bring-up tool; not part of the released images).
   add_executable(rewrite-boot-chain.elf migrate.c migrate_payload.S)
   target_compile_definitions(rewrite-boot-chain.elf PRIVATE ${_migrate_defines})
-  target_link_libraries(rewrite-boot-chain.elf PRIVATE platform)
+  target_link_libraries(rewrite-boot-chain.elf PRIVATE chip)
   add_dependencies(rewrite-boot-chain.elf boot_chain)
   math(EXPR _rewrite_size "${XRDAP_APP_SIZE} - ${XRDAP_SEAL_SIZE} - ${XRDAP_CONFIG_SIZE}" OUTPUT_FORMAT HEXADECIMAL)
   xrdap_add_image(rewrite-boot-chain.elf ${XRDAP_APP_BASE} ${_rewrite_size} 0x400)

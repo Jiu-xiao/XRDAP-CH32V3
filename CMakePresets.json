@@ -1,0 +1,48 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "firmware",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "wdap",
+      "displayName": "wdap: CH32V307 + SX1281, 216 MHz",
+      "inherits": "firmware",
+      "cacheVariables": { "XRDAP_BOARD": "wdap" }
+    },
+    {
+      "name": "wdap-144",
+      "displayName": "wdap at the rated 144 MHz",
+      "inherits": "firmware",
+      "cacheVariables": { "XRDAP_BOARD": "wdap", "XRDAP_APP_SYSCLK_HZ": "144000000" }
+    },
+    {
+      "name": "v305",
+      "displayName": "v305: CH32V305, wired, 216 MHz",
+      "inherits": "firmware",
+      "cacheVariables": { "XRDAP_BOARD": "v305" }
+    },
+    {
+      "name": "v305-144",
+      "displayName": "v305 at the rated 144 MHz",
+      "inherits": "firmware",
+      "cacheVariables": { "XRDAP_BOARD": "v305", "XRDAP_APP_SYSCLK_HZ": "144000000" }
+    },
+    {
+      "name": "linkw",
+      "displayName": "linkw: WCH-LinkW (CH32V208), 144 MHz",
+      "inherits": "firmware",
+      "cacheVariables": { "XRDAP_BOARD": "linkw" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "wdap", "configurePreset": "wdap" },
+    { "name": "wdap-144", "configurePreset": "wdap-144" },
+    { "name": "v305", "configurePreset": "v305" },
+    { "name": "v305-144", "configurePreset": "v305-144" },
+    { "name": "linkw", "configurePreset": "linkw" }
+  ]
+}

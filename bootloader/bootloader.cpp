@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// XR-DAP USB DFU bootloader (CH32V307 board wdap, CH32V305 board v305, CH32V208 board linkw).
+// XR-DAP USB DFU bootloader of the boards wdap (CH32V307), v305 (CH32V305) and linkw
+// (CH32V208).
 //
 // Stage 1 starts it from one of the two bootloader slots (common/boot_slots.hpp); the
 // same code is linked once for each slot (XRDAP_BL_SLOT). At every reset it decides

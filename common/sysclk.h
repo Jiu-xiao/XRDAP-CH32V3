@@ -3,8 +3,8 @@
 #define XRDAP_SYSCLK_H_
 
 /*
- * Core clock of each image, chosen by the board files (boards/<name>.cmake) instead of
- * the WCH system file, which is left at its reset clock (HSI). The PLL multiplies the
+ * Core clock of each image, chosen by the board files (boards/<name>/board.cmake) instead
+ * of the WCH system file, which is left at its reset clock (HSI). The PLL multiplies the
  * board's crystal (XRDAP_PLL_INPUT_HZ of xrdap_chip.h) up to XRDAP_SYSCLK_HZ; HCLK and
  * PCLK2 run at the core clock, PCLK1 at half of it. HSE stays on: the USBHS PHY PLL and
  * the CH32V208's radio use it as reference.
@@ -15,7 +15,7 @@
  * risk of these builds: bit-banged SWD runs 1.5x faster, and the chip can run too hot,
  * with restarts and similar problems.
  *
- * 各镜像的内核时钟由板级文件（boards/<名字>.cmake）选择，WCH 的系统文件保持复位时钟
+ * 各镜像的内核时钟由板级文件（boards/<名字>/board.cmake）选择，WCH 的系统文件保持复位时钟
  * （HSI）。PLL 把板上晶振（xrdap_chip.h 的 XRDAP_PLL_INPUT_HZ）倍频到 XRDAP_SYSCLK_HZ；
  * HCLK、PCLK2 等于内核时钟，PCLK1 为其一半。HSE 保持开启：USBHS PHY 的 PLL 和 CH32V208
  * 的射频以它为参考。

@@ -3,8 +3,8 @@
 
 // What every CH32 probe has: the watchdog, the SWD pins, the CMSIS-DAP v2 and DFU runtime
 // interfaces on USB (chip_usb.hpp), XRDAP-Core's vendor extension and executor, the
-// sampling tick and the control port. A board file (boards/<name>.cpp) constructs the
-// Probe, the parts the board has on top (part.hpp), and runs the main loop with them.
+// sampling tick and the control port. A board file (boards/<name>/board.cpp) constructs
+// the Probe, the parts the board has on top (part.hpp), and runs the main loop with them.
 //
 // The main loop is the execution context: every round it feeds the watchdog, polls the
 // parts, runs the executor (USB commands, control requests, sampling) and carries out a
@@ -14,7 +14,7 @@
 //
 // 每块 CH32 探针都有的东西：看门狗、SWD 引脚、USB（chip_usb.hpp）上的 CMSIS-DAP v2 和
 // DFU runtime 接口、XRDAP-Core 的厂商扩展和执行器、采样节拍和控制口。
-// 板子文件（boards/<name>.cpp）构造 Probe 和这块板另有的部件（part.hpp），
+// 板子文件（boards/<name>/board.cpp）构造 Probe 和这块板另有的部件（part.hpp），
 // 用它们运行主循环。
 //
 // 主循环就是执行上下文：每轮喂狗、轮询部件、运行执行器（USB 命令、控制请求、采样），
