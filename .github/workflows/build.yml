@@ -28,10 +28,10 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Build bootloaders and applications (evt, wdap, wdap-144, v305, v305-144, linkw)
+      - name: Build bootloaders and applications (wdap, wdap-144, v305, v305-144, linkw)
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          tools/build.sh evt wdap wdap-144 v305 v305-144 linkw
+          tools/build.sh wdap wdap-144 v305 v305-144 linkw
       - uses: actions/upload-artifact@v4
         with:
           name: xrdap-ch32v3-${{ github.sha }}

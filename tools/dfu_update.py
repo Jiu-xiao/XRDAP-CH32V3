@@ -8,10 +8,10 @@ probe in does the same); wait for the bootloader (1209:3072, or --bootloader); d
 DFU 1.1 DNLOAD blocks; finish with an empty DNLOAD. The bootloader then writes the seal
 record and starts the new application.
 
-  python tools/dfu_update.py build/app-evt/xrdap.elf.bin
+  python tools/dfu_update.py build/images/wdap/xrdap.elf.bin
   python tools/dfu_update.py --detach-only
 
-With the A/B boot chain (evt, wdap, v305, linkw; bootloader/), --bootloader-dir also updates the
+With the A/B boot chain (wdap, v305, linkw; bootloader/), --bootloader-dir also updates the
 bootloader: the running bootloader names the slot it can write (DFU interface 1,
 "XR-DAP bootloader slot A" or "... slot B"); when the version in the image for that slot
 differs from the running one (USB product string), the image goes to interface 1, the

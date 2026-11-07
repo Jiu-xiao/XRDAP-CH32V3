@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# XR-DAP boot chain (evt, wdap, wdap-144, v305, v305-144, linkw): stage 1 at 0 and the USB DFU bootloader, linked once
+# XR-DAP boot chain (wdap, wdap-144, v305, v305-144, linkw): stage 1 at 0 and the USB DFU bootloader, linked once
 # for each bootloader slot (common/boot_slots.hpp). Bare-metal LibXR (no RTOS), runs at
 # 96 MHz. With Python 3 it also builds boot-chain.bin/.hex (stage 1 + the board's first
 # slot with its record, tools/boot_chain.py) for the first installation and the

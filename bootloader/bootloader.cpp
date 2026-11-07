@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// XR-DAP USB DFU bootloader (CH32V307 boards evt and wdap, CH32V305 board v305).
+// XR-DAP USB DFU bootloader (CH32V307 board wdap, CH32V305 board v305, CH32V208 board linkw).
 //
 // Stage 1 starts it from one of the two bootloader slots (common/boot_slots.hpp); the
 // same code is linked once for each slot (XRDAP_BL_SLOT). At every reset it decides
@@ -12,7 +12,7 @@
 // it with a slot record whose sequence number is one more than its own, and restarts in
 // DFU mode, so that stage 1 starts the new bootloader.
 //
-// XR-DAP 的 USB DFU bootloader（CH32V307 板 evt、wdap，CH32V305 板 v305）。
+// XR-DAP 的 USB DFU bootloader（CH32V307 板 wdap，CH32V305 板 v305，CH32V208 板 linkw）。
 // stage1 从两个引导槽之一启动它（common/boot_slots.hpp）；同一份代码为每个槽各链接一次
 // （XRDAP_BL_SLOT）。每次复位时决定启动应用还是停留在 DFU 模式。应用经启动信箱请求
 // （DFU DETACH）、上电时按住板上的 bootloader 键，或应用区没有有效的带 seal 镜像时停留。

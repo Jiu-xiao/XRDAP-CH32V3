@@ -9,7 +9,7 @@
  * PCLK2 run at the core clock, PCLK1 at half of it. HSE stays on: the USBHS PHY PLL and
  * the CH32V208's radio use it as reference.
  *
- * Clocks used: the bootloader 96 MHz; the evt, wdap-144, v305-144 and linkw applications
+ * Clocks used: the bootloader 96 MHz; the wdap-144, v305-144 and linkw applications
  * 144 MHz (the rated maximum of the CH32V307, CH32V305 and CH32V208); the wdap and v305
  * applications 216 MHz (12 MHz x 18), which is ABOVE the rated clock. That is an accepted
  * risk of these builds: bit-banged SWD runs 1.5x faster, and the chip can run too hot,
@@ -20,7 +20,7 @@
  * HCLK、PCLK2 等于内核时钟，PCLK1 为其一半。HSE 保持开启：USBHS PHY 的 PLL 和 CH32V208
  * 的射频以它为参考。
  *
- * 使用的时钟：bootloader 96 MHz；evt、wdap-144、v305-144、linkw 应用 144 MHz（CH32V307、
+ * 使用的时钟：bootloader 96 MHz；wdap-144、v305-144、linkw 应用 144 MHz（CH32V307、
  * CH32V305、CH32V208 的标称上限）；wdap 和 v305 应用 216 MHz（12 MHz x 18），**超过**标称
  * 时钟。
  * 这是这两种构建接受的风险：软件 SWD 快 1.5 倍，芯片可能温度过高，出现重启等问题。

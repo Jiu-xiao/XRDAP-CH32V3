@@ -4,14 +4,13 @@
 
 用 CH32V307、CH32V305 和 CH32V208 做的 CMSIS-DAP v2 调试探针，基于 [libxr](https://github.com/xrobot-org/libxr)。探针经 USB 提供 Bulk v2 DAP 接口，包长 1024 字节（CH32V307、CH32V305 走高速 480 Mbit/s，CH32V208 走全速 12 Mbit/s），Keil、pyOCD、probe-rs、OpenOCD 把它当普通的 CMSIS-DAP 探针。Flash 里有一个 USB DFU bootloader，固件升级只需一根 USB 线。
 
-固件按板子编译。探针板是 `wdap`、`v305` 和 `linkw`，`wdap-144`、`v305-144` 是同样的板子跑在芯片标称的 144 MHz，`evt` 是 CH32V307 评估板：
+固件按板子编译。探针板是 `wdap`、`v305` 和 `linkw`，`wdap-144`、`v305-144` 是同样的板子跑在芯片标称的 144 MHz：
 
 | 板子 | 芯片、晶振 | 目标接口 | bootloader 键 |
 |---|---|---|---|
 | `wdap`：“高速无线 DAP 调试器”板 | CH32V307RCT6，12 MHz | 2×6 排针：TCK/SWCLK（3 脚）、TMS/SWDIO（4 脚）、RST（5 脚） | KEY2 |
 | `v305`：CH32V305 板（本仓库早期应用的板子，见 1 节末尾） | CH32V305FBP6，12 MHz | SWCLK PB13，SWDIO PA9，NRST PC8 | IAP 键 PC7 |
 | `linkw`：WCH-LinkW-R0-1v1（见 1 节末尾） | CH32V208GBU6，32 MHz | JP1：SWCLK（2 脚）、SWDIO（4 脚）、RST（9 脚） | ModeS 键 PA4 |
-| `evt`：CH32V307 评估板（[CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template) 用的板子） | CH32V307VCT6，8 MHz | SWCLK PB13，SWDIO PB14，NRST PB12 | PB3 按键 |
 
 ## 1. 准备
 
@@ -95,7 +94,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="3072", MODE="0666"
 
 板上还是早期应用（`0d28:2041`）时，它不响应本工具的 DETACH 查找，按住 IAP 键上电让三段式启动的 bootloader 停在 DFU，再写迁移镜像。应用运行后 PA13、PA14 不再是调试口，WCH-Link 连不上芯片。
 
-指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`evt`、`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下芯片温度过高，可能出现重启等问题。`v305-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `v305` 相同。SWD 时序在本板上按周期数扫描标定；216 MHz 下不加延时路径只在请求不低于约 19 MHz 时使用。
+指示灯在 USB 已连上电脑时亮，没有连接时灭，每条 DAP 命令灭一下，DAP 通信时闪烁；单色灯显示不了状态灯规则里的颜色。芯片只有 32 KB RAM：DAP 包数为 2（`wdap` 为 4），采样环形缓冲区 2 KB（厂商 INFO 报告）。应用与 `wdap` 一样跑在 216 MHz，**超出** CH32V305 标称的 144 MHz（早期应用也是 216 MHz：它沿用按 8 MHz 晶振写的 18 倍频，本板为 12 MHz 晶振）；216 MHz 下芯片温度过高，可能出现重启等问题。`v305-144` 是同一块板子跑在标称 144 MHz 的版本，其余与 `v305` 相同。SWD 时序在本板上按周期数扫描标定；216 MHz 下不加延时路径只在请求不低于约 19 MHz 时使用。
 
 ### WCH-LinkW 板（linkw）
 
@@ -180,18 +179,18 @@ SWD 由 GPIO 软件产生：设定值不低于不加延时路径的速度（`wda
 
 ## 4. 自己编译
 
-需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=evt`、`wdap`、`wdap-144`、`v305`、`v305-144` 或 `linkw` 选板子：
+需要 CMake 3.20 以上和 WCH RISC-V GCC 15.2 以上（`riscv32-wch-elf-gcc` 在 `PATH` 里，或用 `-DCOMPILER_PREFIX=<路径>/riscv32-wch-elf-` 指定）。启动链（`bootloader/`）和应用是两个 CMake 工程，用 `-DXRDAP_BOARD=wdap`、`wdap-144`、`v305`、`v305-144` 或 `linkw` 选板子：
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
 cd XRDAP-CH32V3
-cmake -S bootloader -B build/bootloader-evt -DXRDAP_BOARD=evt
-cmake --build build/bootloader-evt
-cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
-cmake --build build/app-evt
+cmake -S bootloader -B build/bootloader-wdap -DXRDAP_BOARD=wdap
+cmake --build build/bootloader-wdap
+cmake -S . -B build/app-wdap -DXRDAP_BOARD=wdap
+cmake --build build/app-wdap
 ```
 
-启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-evt/xrdap.elf.bin`。`tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。打 `v*` 标签时还建一个 release 草稿，带每块板一个压缩包和 `SHA256SUMS`。
+启动链工程产出 `stage1.bin`、`bootloader-a.elf.bin` 和 `bootloader-b.elf.bin`，有 Python 3 时还产出 `boot-chain.bin`/`.hex`（`tools/boot_chain.py`）和 `migrate-to-ab.elf.bin`；应用为 `build/app-wdap/xrdap.elf.bin`。`tools/build.sh wdap wdap-144 v305 v305-144 linkw` 一次编译这几种配置的启动链和应用，镜像收集在 `build/images/<板子>/`；`.github/workflows/build.yml` 在按摘要固定的 `xrimage/xrimage-ch32-riscv` 镜像（WCH GCC 15.2）里运行它并上传镜像。打 `v*` 标签时还建一个 release 草稿，带每块板一个压缩包和 `SHA256SUMS`。
 
 Flash 布局、引导槽规则、目标复位脚、采样节拍和 `linkw` 的射频驱动在编译机上测试，后三项用 `tests/fake` 里的替身代替 WCH 头文件（CI 也运行；无线链路的逻辑在 XRDAP-Core 里测试）：
 
@@ -212,7 +211,7 @@ ctest --test-dir build/tests
 | `0x00000000`–`0x00000FFF` | stage1（`bootloader/stage1.S`，永不更新） |
 | `0x00001000`–`0x0000DFFF` | 引导槽 A（52 KB，运行在 96 MHz；最后 256 字节为槽记录） |
 | `0x0000E000`–`0x0001AFFF` | 引导槽 B（同上） |
-| `0x0001B000`–`0x0003F6FF` | 应用（`evt`、`wdap-144` 运行在 144 MHz，`wdap` 运行在 216 MHz） |
+| `0x0001B000`–`0x0003F6FF` | 应用（`wdap-144` 运行在 144 MHz，`wdap` 运行在 216 MHz） |
 | `0x0003F700`–`0x0003FEFF` | 设置区：角色、速率、信道锁定、配对，固件升级时保留 |
 | `0x0003FF00`–`0x0003FFFF` | seal：应用大小和 CRC32，由 bootloader 在 DFU 下载结束时写入 |
 

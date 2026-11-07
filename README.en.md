@@ -4,14 +4,13 @@
 
 A CMSIS-DAP v2 debug probe built on the CH32V307, the CH32V305 and the CH32V208 with [libxr](https://github.com/xrobot-org/libxr). It provides a Bulk v2 DAP interface over USB with 1024-byte packets (high speed, 480 Mbit/s, on the CH32V307 and CH32V305; full speed, 12 Mbit/s, on the CH32V208), so Keil, pyOCD, probe-rs and OpenOCD use it as an ordinary CMSIS-DAP probe. A USB DFU bootloader in the flash keeps firmware updates to a USB cable.
 
-The firmware is built per board. `wdap`, `v305` and `linkw` are the probe boards, `wdap-144` and `v305-144` the same boards at the chip's rated 144 MHz, and `evt` the CH32V307 evaluation board:
+The firmware is built per board. `wdap`, `v305` and `linkw` are the probe boards, `wdap-144` and `v305-144` the same boards at the chip's rated 144 MHz:
 
 | Board | Chip, crystal | Target interface | Bootloader key |
 |---|---|---|---|
 | `wdap`: the "高速无线DAP调试器" board | CH32V307RCT6, 12 MHz | 2×6 header: TCK/SWCLK (pin 3), TMS/SWDIO (pin 4), RST (pin 5) | KEY2 |
 | `v305`: the CH32V305 board of this repository's earlier application (end of section 1) | CH32V305FBP6, 12 MHz | SWCLK PB13, SWDIO PA9, NRST PC8 | IAP key PC7 |
 | `linkw`: the WCH-LinkW-R0-1v1 (end of section 1) | CH32V208GBU6, 32 MHz | JP1: SWCLK (pin 2), SWDIO (pin 4), RST (pin 9) | ModeS key PA4 |
-| `evt`: CH32V307 evaluation board (the board of [CH32V307_LibXR_Template](https://github.com/xrobot-org/CH32V307_LibXR_Template)) | CH32V307VCT6, 8 MHz | SWCLK PB13, SWDIO PB14, NRST PB12 | key on PB3 |
 
 ## 1. Getting started
 
@@ -95,7 +94,7 @@ The boot chain is the one of the CH32V307 boards (see "Boot chain"); the bootloa
 
 While the board still runs the earlier application (`0d28:2041`), which the tool's DETACH does not look for, hold the IAP key at power-up so that the bootloader of the three-stage boot stays in DFU, and write the migration image. Once the application runs, PA13 and PA14 are no longer a debug port and a WCH-Link cannot reach the chip.
 
-The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `evt` and `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); at 216 MHz the chip can run too hot, and restarts and similar problems can occur. `v305-144` is the same board at the rated 144 MHz, everything else is as on `v305`. The SWD timing is calibrated on this board with a cycle sweep; at 216 MHz the undelayed path is used only from requests of about 19 MHz.
+The LED is lit while USB is connected to a computer, dark without a connection, and goes dark for a moment on every DAP command, so it flickers under DAP traffic; a single-colour LED cannot show the colours of the status light rule. The chip has only 32 KB of RAM: the DAP packet count is 2 (4 on `wdap`) and the sampling ring buffer 2 KB (reported by vendor INFO). The application runs at 216 MHz as on `wdap`, **above** the CH32V305's rated 144 MHz (so did the earlier application: it kept the times-18 PLL setting written for an 8 MHz crystal, and this board has a 12 MHz one); at 216 MHz the chip can run too hot, and restarts and similar problems can occur. `v305-144` is the same board at the rated 144 MHz, everything else is as on `v305`. The SWD timing is calibrated on this board with a cycle sweep; at 216 MHz the undelayed path is used only from requests of about 19 MHz.
 
 ### WCH-LinkW board (linkw)
 
@@ -180,18 +179,18 @@ The SWD clock is made in software on GPIO: a setting at or above the speed of th
 
 ## 4. Building
 
-CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=evt`, `wdap`, `wdap-144`, `v305`, `v305-144` or `linkw` selects the board:
+CMake 3.20 or newer and WCH RISC-V GCC 15.2 or newer are needed (`riscv32-wch-elf-gcc` on `PATH`, or `-DCOMPILER_PREFIX=<path>/riscv32-wch-elf-`). The boot chain (`bootloader/`) and the application are two CMake projects; `-DXRDAP_BOARD=wdap`, `wdap-144`, `v305`, `v305-144` or `linkw` selects the board:
 
 ```
 git clone --recursive https://github.com/Jiu-xiao/XRDAP-CH32V3.git
 cd XRDAP-CH32V3
-cmake -S bootloader -B build/bootloader-evt -DXRDAP_BOARD=evt
-cmake --build build/bootloader-evt
-cmake -S . -B build/app-evt -DXRDAP_BOARD=evt
-cmake --build build/app-evt
+cmake -S bootloader -B build/bootloader-wdap -DXRDAP_BOARD=wdap
+cmake --build build/bootloader-wdap
+cmake -S . -B build/app-wdap -DXRDAP_BOARD=wdap
+cmake --build build/app-wdap
 ```
 
-The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-evt/xrdap.elf.bin`. `tools/build.sh evt wdap wdap-144 v305 v305-144 linkw` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images. On a `v*` tag it also creates a draft release with one archive per board and `SHA256SUMS`.
+The boot chain project builds `stage1.bin`, `bootloader-a.elf.bin` and `bootloader-b.elf.bin`, with Python 3 also `boot-chain.bin`/`.hex` (`tools/boot_chain.py`) and `migrate-to-ab.elf.bin`; the application is `build/app-wdap/xrdap.elf.bin`. `tools/build.sh wdap wdap-144 v305 v305-144 linkw` builds the boot chain and the application for these configurations and collects the images in `build/images/<board>/`; `.github/workflows/build.yml` runs it in the `xrimage/xrimage-ch32-riscv` image pinned by digest (WCH GCC 15.2) and uploads the images. On a `v*` tag it also creates a draft release with one archive per board and `SHA256SUMS`.
 
 The flash layout, the bootloader slot rules, the target reset pin, the sampling tick and the driver of the `linkw` radio are tested on the build machine, the last three against the stand-ins for the WCH headers in `tests/fake` (CI runs them too; the radio link's logic is tested in XRDAP-Core):
 
@@ -212,7 +211,7 @@ The firmware version is `XRDAP_VERSION` in `cmake/version.cmake`; the build adds
 | `0x00000000`–`0x00000FFF` | stage 1 (`bootloader/stage1.S`, never updated) |
 | `0x00001000`–`0x0000DFFF` | bootloader slot A (52 KB, runs at 96 MHz; the last 256 bytes are the slot record) |
 | `0x0000E000`–`0x0001AFFF` | bootloader slot B (likewise) |
-| `0x0001B000`–`0x0003F6FF` | application (144 MHz on `evt` and `wdap-144`, 216 MHz on `wdap`) |
+| `0x0001B000`–`0x0003F6FF` | application (144 MHz on `wdap-144`, 216 MHz on `wdap`) |
 | `0x0003F700`–`0x0003FEFF` | settings: role, rate, channel lock, pairing; kept across firmware updates |
 | `0x0003FF00`–`0x0003FFFF` | seal: application size and CRC32, written by the bootloader when a DFU download ends |
 

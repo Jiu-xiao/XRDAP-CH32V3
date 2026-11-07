@@ -33,8 +33,8 @@ int checks = 0;
 
 using namespace XrDap;
 
-// The pin is high the moment it becomes an output, on the reset pin of every board
-// (evt, wdap, v305), and on a port whose clock is still off.
+// The pin is high the moment it becomes an output, on the reset pin of every board (wdap;
+// v305 and linkw), on a pin of another port, and on a port whose clock is still off.
 void TestTargetResetStaysHigh()
 {
   for (const BoardPin pin :
